@@ -1,0 +1,16 @@
+appname=anifeed
+version=0.2.0
+display_name=AniFeed
+desc=自托管动漫 RSS 自动离线到 115 网盘。安装后打开应用，先创建 Web UI 登录账号，再填写 115 Cookies。
+source=thirdparty
+platform=x86
+maintainer=huohen92
+maintainer_url=https://github.com/huohen92/anifeed
+distributor=huohen92
+distributor_url=https://github.com/huohen92/anifeed
+desktop_uidir=ui
+desktop_applaunchname=anifeed.main
+service_port=8115
+checkport=true
+ctl_stop=true
+changelog=0.02：Docker 版首次发布。

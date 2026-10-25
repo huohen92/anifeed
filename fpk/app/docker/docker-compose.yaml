@@ -1,0 +1,11 @@
+services:
+  anifeed:
+    image: huohen92/anifeed:0.02
+    container_name: anifeed
+    restart: unless-stopped
+    ports:
+      - "${TRIM_SERVICE_PORT}:8115"
+    volumes:
+      - "${TRIM_DATA_SHARE_PATHS}:/data"
+    environment:
+      - TZ=Asia/Shanghai

@@ -29,3 +29,7 @@ db.sqlite
 *.sqlite-shm
 *.sqlite-wal
 .env
+
+# fnOS packages
+/dist/
+/*.fpk

@@ -165,6 +165,39 @@ docker compose logs -f
 docker compose up -d --build
 ```
 
+### fnOS FPK 应用
+
+飞牛 fnOS（x86）安装包：
+
+```text
+https://github.com/huohen92/anifeed/releases/download/v0.02/anifeed-0.2.0-x86.fpk
+```
+
+安装方式：
+
+```text
+fnOS 应用中心 → 手动安装 → 选择 anifeed-0.2.0-x86.fpk
+```
+
+说明：
+
+- 仅支持 x86 设备
+- 需要 fnOS 已安装 Docker
+- 应用端口：`8115`
+- 数据保存在 fnOS 应用共享目录 `anifeed`
+- 容器镜像：`huohen92/anifeed:0.02`
+- 当前 FPK 使用 Docker 模板，安装时拉取镜像
+
+从源码构建 FPK：
+
+```bash
+# 安装 fnpack 1.2.3 后
+./scripts/build-fpk.sh
+# 输出：dist/anifeed-0.2.0-x86.fpk
+```
+
+FPK 源文件位于 [`fpk/`](./fpk)。
+
 ### 截图
 
 | 概览 | 订阅管理 |
