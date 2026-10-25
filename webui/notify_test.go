@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/huohen92/anifeed/config"
 	"github.com/huohen92/anifeed/p115"
@@ -65,7 +66,9 @@ func TestNotificationContentSelection(t *testing.T) {
 		t.Fatalf("summary text = %q", text)
 	}
 	text = notificationText(config.NotifyConfig{Content: []string{"details", "time"}}, payload)
-	if !strings.Contains(text, "订阅更新") || !strings.Contains(text, "番剧") || !strings.Contains(text, "番剧 - 01") || !strings.Contains(text, "时间：2026-10-19 12:00") {
+	parsed, _ := time.Parse(time.RFC3339, payload.Timestamp)
+	wantTime := parsed.Local().Format("2006-01-02 15:04")
+	if !strings.Contains(text, "订阅更新") || !strings.Contains(text, "番剧") || !strings.Contains(text, "番剧 - 01") || !strings.Contains(text, "时间："+wantTime) {
 		t.Fatalf("details text = %q", text)
 	}
 }
