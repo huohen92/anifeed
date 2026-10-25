@@ -1,5 +1,10 @@
 # AniFeed
 
+[![CI](https://github.com/huohen92/anifeed/actions/workflows/ci.yml/badge.svg)](https://github.com/huohen92/anifeed/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/huohen92/anifeed?include_prereleases)](https://github.com/huohen92/anifeed/releases)
+[![Docker Pulls](https://img.shields.io/docker/pulls/huohen92/anifeed)](https://hub.docker.com/r/huohen92/anifeed)
+[![License](https://img.shields.io/github/license/huohen92/anifeed)](LICENSE)
+
 将 RSS 订阅离线下载到 115 网盘。
 
 支持批量添加 magnet, ed2k, http 链接到 115 离线任务
@@ -39,7 +44,7 @@ Rust 版本 [rss2pan](https://github.com/zhifengle/rss2pan) 使用的 Web API �
 - 自动运行：可设置间隔、启动时立即运行；支持全局排除、跳过 x.5 集、失败重试、运行后自动清理已完成任务。
 - 通知：运行结束后推送纯文本摘要，支持企业微信机器人 / 通用 Webhook、推送内容选择和测试通知。
 - 任务与历史：查看 115 离线任务进度、清理任务；查看本地提交历史并追踪任务 hash。
-- 设置：服务端口、访问令牌、数据库路径、115 限流参数、代理、站点请求头、Mikan 镜像地址，以及保留注释的原始 `config.toml` 编辑器。
+- 设置：服务端口、访问令牌、数据库路径、115 限流参数、代理、站点请求头、Mikan 镜像地址，以及配置文件热重载；页面不提供原始 TOML 编辑器。
 
 ### 启动
 
@@ -59,12 +64,30 @@ go build -o anifeed .
 
 首次启动时如果当前目录没有 `config.toml`，打开页面后在「设置」中填写 115 Cookies（或扫码登录）并保存，程序会自动生成 `config.toml`。旧的 `rss.json`、`node-site-config.json`、`.cookies` 会被读取并在首次保存时迁移，原文件不会被删除。
 
-### Docker
+### Docker 部署（推荐）
 
-从 Docker Hub 拉取：
+镜像：
+
+```text
+huohen92/anifeed:0.02
+huohen92/anifeed:latest
+```
+
+Docker Hub：
+
+```text
+https://hub.docker.com/r/huohen92/anifeed
+```
+
+当前镜像为 `linux/amd64`，基于 `scratch` + 静态 musl 二进制，体积约 8 MB。
+
+#### 直接拉取运行
 
 ```bash
 docker pull huohen92/anifeed:0.02
+
+mkdir -p data
+
 docker run -d \
   --name anifeed \
   --restart unless-stopped \
@@ -72,25 +95,75 @@ docker run -d \
   -v "$PWD/data:/data" \
   -e TZ=Asia/Shanghai \
   huohen92/anifeed:0.02
-# 打开 http://服务器IP:8115
 ```
 
-镜像地址：
+打开：
 
 ```text
-huohen92/anifeed:0.02
-huohen92/anifeed:latest
+http://服务器IP:8115
 ```
 
-当前镜像为 `linux/amd64`，基于 scratch + 静态 musl 二进制，体积约 8 MB。
+首次打开后创建 Web UI 登录账号，然后在「设置 → 115 账号」填写 Cookies 或扫码登录。
 
-也可以从源码构建：
+查看日志：
+
+```bash
+docker logs -f anifeed
+```
+
+升级：
+
+```bash
+docker pull huohen92/anifeed:latest
+docker rm -f anifeed
+# 使用上面的 docker run 命令重新启动
+```
+
+数据保存在宿主机的 `./data` 目录：
+
+```text
+data/config.toml
+data/.cookies
+data/db.sqlite
+```
+
+#### Docker Compose 拉取部署
+
+新建 `compose.yaml`：
+
+```yaml
+services:
+  anifeed:
+    image: huohen92/anifeed:0.02
+    container_name: anifeed
+    restart: unless-stopped
+    ports:
+      - "8115:8115"
+    volumes:
+      - ./data:/data
+    environment:
+      - TZ=Asia/Shanghai
+```
+
+启动：
+
+```bash
+mkdir -p data
+docker compose pull
+docker compose up -d
+```
+
+查看日志：
+
+```bash
+docker compose logs -f
+```
+
+#### 从源码构建 Docker 镜像
 
 ```bash
 docker compose up -d --build
 ```
-
-数据（`config.toml`、`.cookies`、`db.sqlite`）保存在 `./data` 目录。
 
 ### 截图
 
