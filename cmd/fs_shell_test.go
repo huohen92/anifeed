@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
-	"github.com/zhifengle/rss2cloud/cloudfs"
+	"github.com/zhifengle/anifeed/cloudfs"
 )
 
 // --- parseShellLine ---

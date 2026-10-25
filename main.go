@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/zhifengle/rss2cloud/cmd"
+	"github.com/zhifengle/anifeed/cmd"
 )
 
 func main() {

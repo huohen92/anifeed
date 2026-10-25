@@ -11,7 +11,7 @@ import (
 func TestBackwardCompatibility_RSSJsonOnly(t *testing.T) {
 	// Create a temporary directory for test files
 	tmpDir := t.TempDir()
-	
+
 	// Create only rss.json (no config.toml)
 	rssContent := `{
 		"mikanani.me": [
@@ -35,28 +35,28 @@ func TestBackwardCompatibility_RSSJsonOnly(t *testing.T) {
 	if err := os.WriteFile(rssPath, []byte(rssContent), 0644); err != nil {
 		t.Fatalf("Failed to write test rss.json: %v", err)
 	}
-	
+
 	// Change to temp directory
 	oldWd, _ := os.Getwd()
 	defer os.Chdir(oldWd)
 	os.Chdir(tmpDir)
-	
+
 	// Load configuration - should work without config.toml
 	cfg, source, err := Load(CLIParams{})
 	if err != nil {
 		t.Fatalf("Load() failed with legacy rss.json: %v", err)
 	}
-	
+
 	// Verify no TOML was loaded
 	if source.TOMLPath != "" {
 		t.Error("Expected TOMLPath to be empty when only rss.json exists")
 	}
-	
+
 	// Verify RSS configuration was loaded from rss.json
 	if len(cfg.RSS) != 2 {
 		t.Errorf("Expected 2 RSS sites, got %d", len(cfg.RSS))
 	}
-	
+
 	// Verify mikanani.me feeds
 	mikanFeeds, ok := cfg.RSS["mikanani.me"]
 	if !ok {
@@ -80,7 +80,7 @@ func TestBackwardCompatibility_RSSJsonOnly(t *testing.T) {
 	if mikanFeeds[0].SavePath != "动画/测试" {
 		t.Errorf("Expected savepath '动画/测试', got %s", mikanFeeds[0].SavePath)
 	}
-	
+
 	// Verify dmhy feeds
 	dmhyFeeds, ok := cfg.RSS["share.dmhy.org"]
 	if !ok {
@@ -92,7 +92,7 @@ func TestBackwardCompatibility_RSSJsonOnly(t *testing.T) {
 	if dmhyFeeds[0].Name != "another show" {
 		t.Errorf("Expected feed name 'another show', got %s", dmhyFeeds[0].Name)
 	}
-	
+
 	// Verify defaults are used for other settings
 	if cfg.Server.Port != 8115 {
 		t.Errorf("Expected default port 8115, got %d", cfg.Server.Port)
@@ -110,7 +110,7 @@ func TestBackwardCompatibility_RSSJsonOnly(t *testing.T) {
 func TestBackwardCompatibility_NodeSiteConfigOnly(t *testing.T) {
 	// Create a temporary directory for test files
 	tmpDir := t.TempDir()
-	
+
 	// Create only node-site-config.json (no config.toml)
 	sitesContent := `{
 		"mikanani.me": {
@@ -131,28 +131,28 @@ func TestBackwardCompatibility_NodeSiteConfigOnly(t *testing.T) {
 	if err := os.WriteFile(sitesPath, []byte(sitesContent), 0644); err != nil {
 		t.Fatalf("Failed to write test node-site-config.json: %v", err)
 	}
-	
+
 	// Change to temp directory
 	oldWd, _ := os.Getwd()
 	defer os.Chdir(oldWd)
 	os.Chdir(tmpDir)
-	
+
 	// Load configuration - should work without config.toml
 	cfg, source, err := Load(CLIParams{})
 	if err != nil {
 		t.Fatalf("Load() failed with legacy node-site-config.json: %v", err)
 	}
-	
+
 	// Verify no TOML was loaded
 	if source.TOMLPath != "" {
 		t.Error("Expected TOMLPath to be empty when only node-site-config.json exists")
 	}
-	
+
 	// Verify sites configuration was loaded from node-site-config.json
 	if len(cfg.Sites) != 3 {
 		t.Errorf("Expected 3 sites, got %d", len(cfg.Sites))
 	}
-	
+
 	// Verify mikanani.me config
 	mikanConfig, ok := cfg.Sites["mikanani.me"]
 	if !ok {
@@ -161,7 +161,7 @@ func TestBackwardCompatibility_NodeSiteConfigOnly(t *testing.T) {
 	if mikanConfig.HttpsAgent != "true" {
 		t.Errorf("Expected HttpsAgent 'true', got %s", mikanConfig.HttpsAgent)
 	}
-	
+
 	// Verify dmhy config with headers
 	dmhyConfig, ok := cfg.Sites["share.dmhy.org"]
 	if !ok {
@@ -176,7 +176,7 @@ func TestBackwardCompatibility_NodeSiteConfigOnly(t *testing.T) {
 	if dmhyConfig.Headers["Referer"] != "https://share.dmhy.org" {
 		t.Errorf("Expected Referer 'https://share.dmhy.org', got %s", dmhyConfig.Headers["Referer"])
 	}
-	
+
 	// Verify nyaa.si config
 	nyaaConfig, ok := cfg.Sites["nyaa.si"]
 	if !ok {
@@ -185,7 +185,7 @@ func TestBackwardCompatibility_NodeSiteConfigOnly(t *testing.T) {
 	if nyaaConfig.HttpsAgent != "true" {
 		t.Errorf("Expected HttpsAgent 'true', got %s", nyaaConfig.HttpsAgent)
 	}
-	
+
 	// Verify defaults are used for other settings
 	if cfg.Server.Port != 8115 {
 		t.Errorf("Expected default port 8115, got %d", cfg.Server.Port)
@@ -200,40 +200,40 @@ func TestBackwardCompatibility_NodeSiteConfigOnly(t *testing.T) {
 func TestBackwardCompatibility_CookiesOnly(t *testing.T) {
 	// Create a temporary directory for test files
 	tmpDir := t.TempDir()
-	
+
 	// Create only .cookies file (no config.toml)
 	cookiesContent := "UID=123456789; CID=987654321; SEID=abcdef123456; KID=xyz789"
 	cookiesPath := filepath.Join(tmpDir, ".cookies")
 	if err := os.WriteFile(cookiesPath, []byte(cookiesContent), 0600); err != nil {
 		t.Fatalf("Failed to write test .cookies: %v", err)
 	}
-	
+
 	// Change to temp directory
 	oldWd, _ := os.Getwd()
 	defer os.Chdir(oldWd)
 	os.Chdir(tmpDir)
-	
+
 	// Load configuration - should work without config.toml
 	cfg, source, err := Load(CLIParams{})
 	if err != nil {
 		t.Fatalf("Load() failed with legacy .cookies: %v", err)
 	}
-	
+
 	// Verify no TOML was loaded
 	if source.TOMLPath != "" {
 		t.Error("Expected TOMLPath to be empty when only .cookies exists")
 	}
-	
+
 	// Verify cookies path was tracked
 	if source.CookiesPath == "" {
 		t.Error("Expected CookiesPath to be set")
 	}
-	
+
 	// Verify cookies were loaded from .cookies file
 	if cfg.Auth.Cookies != cookiesContent {
 		t.Errorf("Expected cookies '%s', got '%s'", cookiesContent, cfg.Auth.Cookies)
 	}
-	
+
 	// Verify defaults are used for other settings
 	if cfg.Server.Port != 8115 {
 		t.Errorf("Expected default port 8115, got %d", cfg.Server.Port)
@@ -254,7 +254,7 @@ func TestBackwardCompatibility_CookiesOnly(t *testing.T) {
 func TestBackwardCompatibility_AllLegacyFiles(t *testing.T) {
 	// Create a temporary directory for test files
 	tmpDir := t.TempDir()
-	
+
 	// Create rss.json
 	rssContent := `{
 		"example.com": [
@@ -268,7 +268,7 @@ func TestBackwardCompatibility_AllLegacyFiles(t *testing.T) {
 	if err := os.WriteFile(rssPath, []byte(rssContent), 0644); err != nil {
 		t.Fatalf("Failed to write test rss.json: %v", err)
 	}
-	
+
 	// Create node-site-config.json
 	sitesContent := `{
 		"example.com": {
@@ -279,49 +279,49 @@ func TestBackwardCompatibility_AllLegacyFiles(t *testing.T) {
 	if err := os.WriteFile(sitesPath, []byte(sitesContent), 0644); err != nil {
 		t.Fatalf("Failed to write test node-site-config.json: %v", err)
 	}
-	
+
 	// Create .cookies
 	cookiesContent := "UID=111; CID=222; SEID=333; KID=444"
 	cookiesPath := filepath.Join(tmpDir, ".cookies")
 	if err := os.WriteFile(cookiesPath, []byte(cookiesContent), 0600); err != nil {
 		t.Fatalf("Failed to write test .cookies: %v", err)
 	}
-	
+
 	// Change to temp directory
 	oldWd, _ := os.Getwd()
 	defer os.Chdir(oldWd)
 	os.Chdir(tmpDir)
-	
+
 	// Load configuration - should work without config.toml
 	cfg, source, err := Load(CLIParams{})
 	if err != nil {
 		t.Fatalf("Load() failed with all legacy files: %v", err)
 	}
-	
+
 	// Verify no TOML was loaded
 	if source.TOMLPath != "" {
 		t.Error("Expected TOMLPath to be empty when only legacy files exist")
 	}
-	
+
 	// Verify all legacy configurations were loaded
 	if cfg.Auth.Cookies != cookiesContent {
 		t.Errorf("Expected cookies from .cookies file, got %s", cfg.Auth.Cookies)
 	}
-	
+
 	if len(cfg.RSS) != 1 {
 		t.Errorf("Expected 1 RSS site from rss.json, got %d", len(cfg.RSS))
 	}
 	if feeds, ok := cfg.RSS["example.com"]; !ok || len(feeds) != 1 || feeds[0].Name != "legacy-rss-feed" {
 		t.Error("Expected RSS feed from rss.json")
 	}
-	
+
 	if len(cfg.Sites) != 1 {
 		t.Errorf("Expected 1 site from node-site-config.json, got %d", len(cfg.Sites))
 	}
 	if site, ok := cfg.Sites["example.com"]; !ok || site.HttpsAgent != "true" {
 		t.Error("Expected site config from node-site-config.json")
 	}
-	
+
 	// Verify defaults are used for settings not in legacy files
 	if cfg.Server.Port != 8115 {
 		t.Errorf("Expected default port 8115, got %d", cfg.Server.Port)
@@ -336,18 +336,18 @@ func TestBackwardCompatibility_AllLegacyFiles(t *testing.T) {
 func TestBackwardCompatibility_NoConfigFiles(t *testing.T) {
 	// Create an empty temporary directory (no config files at all)
 	tmpDir := t.TempDir()
-	
+
 	// Change to temp directory
 	oldWd, _ := os.Getwd()
 	defer os.Chdir(oldWd)
 	os.Chdir(tmpDir)
-	
+
 	// Load configuration - should work with defaults
 	cfg, source, err := Load(CLIParams{})
 	if err != nil {
 		t.Fatalf("Load() failed with no config files: %v", err)
 	}
-	
+
 	// Verify no config files were loaded
 	if source.TOMLPath != "" {
 		t.Error("Expected TOMLPath to be empty when no config files exist")
@@ -355,16 +355,16 @@ func TestBackwardCompatibility_NoConfigFiles(t *testing.T) {
 	if source.CookiesPath != "" {
 		t.Error("Expected CookiesPath to be empty when no config files exist")
 	}
-	
+
 	// Verify all defaults are used
 	if cfg.Auth.Cookies != "" {
 		t.Errorf("Expected empty cookies, got %s", cfg.Auth.Cookies)
 	}
-	
+
 	if cfg.Server.Port != 8115 {
 		t.Errorf("Expected default port 8115, got %d", cfg.Server.Port)
 	}
-	
+
 	if cfg.P115.DisableCache != false {
 		t.Error("Expected default DisableCache false")
 	}
@@ -380,16 +380,16 @@ func TestBackwardCompatibility_NoConfigFiles(t *testing.T) {
 	if cfg.P115.CooldownMaxMs != 1100 {
 		t.Errorf("Expected default CooldownMaxMs 1100, got %d", cfg.P115.CooldownMaxMs)
 	}
-	
+
 	if cfg.Proxy.HTTP != "http://127.0.0.1:10809" {
 		t.Errorf("Expected default proxy 'http://127.0.0.1:10809', got %s", cfg.Proxy.HTTP)
 	}
-	
+
 	if len(cfg.RSS) != 0 {
 		t.Errorf("Expected empty RSS config, got %d entries", len(cfg.RSS))
 	}
-	
-	// Note: Sites may contain entries from ~/.config/rss2cloud/node-site-config.json or ~/node-site-config.json
+
+	// Note: Sites may contain entries from ~/.config/anifeed/node-site-config.json or ~/node-site-config.json
 	// This is expected behavior as the legacy loader searches in those locations
 	// We don't verify Sites is empty because it may legitimately have entries from user's home directory
 }
@@ -399,14 +399,14 @@ func TestBackwardCompatibility_NoConfigFiles(t *testing.T) {
 func TestBackwardCompatibility_LegacyWithCLIOverride(t *testing.T) {
 	// Create a temporary directory for test files
 	tmpDir := t.TempDir()
-	
+
 	// Create legacy .cookies
 	cookiesContent := "LEGACY_COOKIES"
 	cookiesPath := filepath.Join(tmpDir, ".cookies")
 	if err := os.WriteFile(cookiesPath, []byte(cookiesContent), 0600); err != nil {
 		t.Fatalf("Failed to write test .cookies: %v", err)
 	}
-	
+
 	// Create legacy rss.json
 	rssContent := `{
 		"legacy.com": [
@@ -420,7 +420,7 @@ func TestBackwardCompatibility_LegacyWithCLIOverride(t *testing.T) {
 	if err := os.WriteFile(rssPath, []byte(rssContent), 0644); err != nil {
 		t.Fatalf("Failed to write test rss.json: %v", err)
 	}
-	
+
 	// Create CLI RSS file
 	cliRSSContent := `{
 		"cli.com": [
@@ -434,41 +434,41 @@ func TestBackwardCompatibility_LegacyWithCLIOverride(t *testing.T) {
 	if err := os.WriteFile(cliRSSPath, []byte(cliRSSContent), 0644); err != nil {
 		t.Fatalf("Failed to write test cli-rss.json: %v", err)
 	}
-	
+
 	// Change to temp directory
 	oldWd, _ := os.Getwd()
 	defer os.Chdir(oldWd)
 	os.Chdir(tmpDir)
-	
+
 	// Load configuration with CLI overrides
 	cfg, _, err := Load(CLIParams{
-		Cookies:       "CLI_COOKIES",
-		Port:          9999,
-		RSSPath:       cliRSSPath,
-		ChunkDelay:    10,
-		DisableCache:  true,
+		Cookies:      "CLI_COOKIES",
+		Port:         9999,
+		RSSPath:      cliRSSPath,
+		ChunkDelay:   10,
+		DisableCache: true,
 	})
 	if err != nil {
 		t.Fatalf("Load() failed with CLI overrides: %v", err)
 	}
-	
+
 	// Verify CLI parameters override legacy files
 	if cfg.Auth.Cookies != "CLI_COOKIES" {
 		t.Errorf("Expected CLI cookies to override legacy, got %s", cfg.Auth.Cookies)
 	}
-	
+
 	if cfg.Server.Port != 9999 {
 		t.Errorf("Expected CLI port 9999, got %d", cfg.Server.Port)
 	}
-	
+
 	if cfg.P115.ChunkDelay != 10 {
 		t.Errorf("Expected CLI ChunkDelay 10, got %d", cfg.P115.ChunkDelay)
 	}
-	
+
 	if !cfg.P115.DisableCache {
 		t.Error("Expected CLI DisableCache true")
 	}
-	
+
 	// Verify CLI RSS path overrides legacy rss.json
 	if len(cfg.RSS) != 1 {
 		t.Errorf("Expected 1 RSS site from CLI, got %d", len(cfg.RSS))

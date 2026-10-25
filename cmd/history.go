@@ -9,8 +9,8 @@ import (
 
 	"github.com/rivo/uniseg"
 	"github.com/spf13/cobra"
-	"github.com/zhifengle/rss2cloud/config"
-	"github.com/zhifengle/rss2cloud/store"
+	"github.com/zhifengle/anifeed/config"
+	"github.com/zhifengle/anifeed/store"
 )
 
 var (

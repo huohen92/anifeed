@@ -20,11 +20,11 @@ var fsShellCmd = &cobra.Command{
 
 Directory listings and path completion reuse the shared fs session cache.
 Use --list-cache-ttl on the parent fs command to tune freshness, for example:
-  rss2cloud fs --list-cache-ttl 5s shell
-  rss2cloud fs --list-cache-ttl 0 shell`,
-	Example: "rss2cloud fs shell\n" +
-		"rss2cloud fs --list-cache-ttl 5s shell\n" +
-		"rss2cloud fs --list-cache-ttl 0 shell",
+  anifeed fs --list-cache-ttl 5s shell
+  anifeed fs --list-cache-ttl 0 shell`,
+	Example: "anifeed fs shell\n" +
+		"anifeed fs --list-cache-ttl 5s shell\n" +
+		"anifeed fs --list-cache-ttl 0 shell",
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := requireInteractiveTerminal(os.Stdin); err != nil {

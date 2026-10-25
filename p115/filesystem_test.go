@@ -6,7 +6,7 @@ import (
 
 	"github.com/deadblue/elevengo"
 	llErrors "github.com/deadblue/elevengo/lowlevel/errors"
-	"github.com/zhifengle/rss2cloud/cloudfs"
+	"github.com/zhifengle/anifeed/cloudfs"
 )
 
 // --- entryFromFile ---

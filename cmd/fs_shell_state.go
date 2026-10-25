@@ -7,7 +7,7 @@ import (
 )
 
 // shellStateFile is the default path for persisted shell state.
-const shellStateFile = ".rss2cloud_shell_state.json"
+const shellStateFile = ".anifeed_shell_state.json"
 
 // shellPersistedState holds the fields written to disk between sessions.
 type shellPersistedState struct {

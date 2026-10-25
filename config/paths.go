@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-const appDirName = "rss2cloud"
+const appDirName = "anifeed"
 
 func userConfigDir() (string, bool) {
 	home, err := os.UserHomeDir()
@@ -65,6 +65,16 @@ func ExistingCookiePathOrDefault() string {
 		return path
 	}
 	return ".cookies"
+}
+
+// DefaultConfigPath returns the path used when creating a new config.toml.
+// It is the absolute path of config.toml in the current working directory.
+func DefaultConfigPath() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "config.toml"
+	}
+	return filepath.Join(cwd, "config.toml")
 }
 
 func dedupePaths(paths []string) []string {

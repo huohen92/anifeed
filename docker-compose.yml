@@ -1,0 +1,16 @@
+services:
+  anifeed:
+    build:
+      context: .
+      args:
+        # 国内网络可改为 https://goproxy.cn,direct
+        GOPROXY: https://proxy.golang.org,direct
+    image: anifeed:local
+    container_name: anifeed
+    restart: unless-stopped
+    ports:
+      - "8115:8115"
+    volumes:
+      - ./data:/data
+    environment:
+      - TZ=Asia/Shanghai

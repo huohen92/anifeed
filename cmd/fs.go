@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/zhifengle/rss2cloud/cloudfs"
-	"github.com/zhifengle/rss2cloud/config"
-	"github.com/zhifengle/rss2cloud/p115"
+	"github.com/zhifengle/anifeed/cloudfs"
+	"github.com/zhifengle/anifeed/config"
+	"github.com/zhifengle/anifeed/p115"
 )
 
 // fs-level shared flags
@@ -53,7 +53,7 @@ func init() {
 }
 
 // initFsSession initialises a p115.Agent and returns a cloudfs.Session.
-// It reuses the top-level cookies/qrLogin flags already defined in rss2cloud.go.
+// It reuses the top-level cookies/qrLogin flags already defined in anifeed.go.
 func initFsSession(ctx context.Context, cmd *cobra.Command) *cloudfs.Session {
 	cliParams := buildCLIParams(cmd)
 	cfg, _, err := config.LoadWithOptions(cliParams, config.LoadOptions{Auth: true})
@@ -68,6 +68,8 @@ func initFsSession(ctx context.Context, cmd *cobra.Command) *cloudfs.Session {
 		ChunkSize:     cfg.P115.ChunkSize,
 		CooldownMinMs: cfg.P115.CooldownMinMs,
 		CooldownMaxMs: cfg.P115.CooldownMaxMs,
+		PostProcess:   cfg.Rename.Enabled || cfg.Offline.DualFolder,
+		OnePerEpisode: cfg.Offline.OnePerEpisode,
 		DatabasePath:  cfg.Database.Path,
 	})
 

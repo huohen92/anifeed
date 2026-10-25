@@ -85,8 +85,8 @@ func TestResolveDatabasePath(t *testing.T) {
 		{
 			name:     "Relative path resolved with Unix separator",
 			dbPath:   "data/cache.db",
-			tomlPath: "/home/user/.config/rss2cloud/config.toml",
-			expected: "/home/user/.config/rss2cloud/data/cache.db",
+			tomlPath: "/home/user/.config/anifeed/config.toml",
+			expected: "/home/user/.config/anifeed/data/cache.db",
 		},
 		{
 			name:     "Relative path with dot",
@@ -128,7 +128,7 @@ func TestResolveDatabasePath(t *testing.T) {
 // TestLoad_DatabasePathInUserConfigDir verifies database path resolution in user config directory
 func TestLoad_DatabasePathInUserConfigDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	configDir := filepath.Join(tmpDir, ".config", "rss2cloud")
+	configDir := filepath.Join(tmpDir, ".config", "anifeed")
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		t.Fatalf("Failed to create config directory: %v", err)
 	}
@@ -181,7 +181,7 @@ path = "app.db"
 
 func TestLoad_DefaultDatabasePathFallsBackToUserConfigDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	configDir := filepath.Join(tmpDir, ".config", "rss2cloud")
+	configDir := filepath.Join(tmpDir, ".config", "anifeed")
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		t.Fatalf("Failed to create config directory: %v", err)
 	}

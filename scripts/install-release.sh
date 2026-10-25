@@ -2,14 +2,14 @@
 
 set -Eeuo pipefail
 
-APP_NAME='rss2cloud'
-REPO='zhifengle/rss2cloud'
-BIN_PATH='/usr/local/bin/rss2cloud'
-DATA_DIR='/var/lib/rss2cloud'
+APP_NAME='anifeed'
+REPO='zhifengle/anifeed'
+BIN_PATH='/usr/local/bin/anifeed'
+DATA_DIR='/var/lib/anifeed'
 CONFIG_FILE="${DATA_DIR}/config.toml"
 COOKIES_FILE="${DATA_DIR}/.cookies"
 DB_FILE="${DATA_DIR}/db.sqlite"
-SERVICE_FILE='/etc/systemd/system/rss2cloud.service'
+SERVICE_FILE='/etc/systemd/system/anifeed.service'
 SERVICE_PORT='8115'
 archive_tmp_dir=''
 
@@ -32,7 +32,7 @@ Usage:
   install-release.sh [install|update|uninstall|purge]
 
 Commands:
-  install     Install or update rss2cloud. This is the default command.
+  install     Install or update anifeed. This is the default command.
   update      Same as install.
   uninstall   Stop service and remove binary/service files. Keep config and data.
   purge       Uninstall and remove config and data.
@@ -145,7 +145,7 @@ install_binary() {
 install_systemd_service() {
   cat >"$SERVICE_FILE" <<EOF
 [Unit]
-Description=rss2cloud server
+Description=AniFeed server
 Documentation=https://github.com/${REPO}
 After=network-online.target
 Wants=network-online.target
@@ -176,7 +176,7 @@ EOF
 print_install_next_steps() {
   cat <<EOF
 
-rss2cloud is installed.
+anifeed is installed.
 
 Config:
   ${CONFIG_FILE}
@@ -245,7 +245,7 @@ uninstall_release() {
 
   cat <<EOF
 
-rss2cloud is uninstalled.
+anifeed is uninstalled.
 
 Kept config and data:
   ${DATA_DIR}

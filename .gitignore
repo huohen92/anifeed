@@ -7,3 +7,25 @@
 t.txt
 db.sqlite
 .cookies
+
+# Web UI build / local runtime
+/bin/
+/.devdata/
+/config.toml
+/config.toml.bak
+/posters/
+/.uitest/
+/.smoke/
+
+# runtime pid/log
+/.runtime/
+
+# Generated backups, logs and local data
+/backups/
+*.bak
+*.log
+*.pid
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.env

@@ -34,6 +34,9 @@ jobs:
         goarch: [amd64]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
       - uses: wangyoucao577/go-release-action@v1
         with:
           pre_command: 'export CGO_ENABLED=1'
@@ -41,7 +44,7 @@ jobs:
           goos: ${{ matrix.goos }}
           goarch: ${{ matrix.goarch }}
           ldflags: '-s -w -extldflags -static'
-          asset_name: rss2cloud-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}-musl
+          asset_name: anifeed-${{ github.ref_name }}-${{ matrix.goos }}-${{ matrix.goarch }}-musl
           release_tag: ${{ github.ref_name }}
   releases-darwin:
     name: Release darwin Go Binary
@@ -50,27 +53,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.25'
           check-latest: true
       - name: Install dependencies
         run: |
           export CGO_ENABLED=1
           mkdir -p ./release-tmp
-          go get .
+          go mod download
       - name: Build
         run: go build -ldflags "-s -w" -o ./release-tmp/
       - name: Generate tar
         run: |
           mkdir release-ready
           cd ./release-tmp
-          tar -zcvf ../release-ready/rss2cloud-${{ github.ref_name }}-darwin-arm64.tar.gz *
+          tar -zcvf ../release-ready/anifeed-${{ github.ref_name }}-darwin-arm64.tar.gz *
       - name: Upload Release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: ./release-ready/rss2cloud-${{ github.ref_name }}-darwin-arm64.tar.gz
+          file: ./release-ready/anifeed-${{ github.ref_name }}-darwin-arm64.tar.gz
           tag: ${{ github.ref_name }}
           prerelease: ${{ env.IS_PRERELEASE }}
           overwrite: true
@@ -85,6 +88,9 @@ jobs:
         goarch: [amd64]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
       - uses: wangyoucao577/go-release-action@v1
         with:
           pre_command: 'apt-get update && apt-get install --no-install-recommends -y gcc-mingw-w64-x86-64 && export CGO_ENABLED=1 && export CC=x86_64-w64-mingw32-gcc'

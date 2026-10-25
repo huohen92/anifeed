@@ -342,8 +342,8 @@ func TestTransformTOMLRSS_PreservesAllFields(t *testing.T) {
 			URL:        "https://example.com/rss",
 			Cid:        "456",
 			SavePath:   "/save/path",
-		Filter:     "filter text",
-		Exclude:    "exclude text",
+			Filter:     "filter text",
+			Exclude:    "exclude text",
 			Expiration: 7200,
 		},
 	}
@@ -371,9 +371,9 @@ func TestTransformTOMLRSS_PreservesAllFields(t *testing.T) {
 	if feed.Filter != "filter text" {
 		t.Errorf("Filter = %q, want %q", feed.Filter, "filter text")
 	}
-if feed.Exclude != "exclude text" {
-	t.Errorf("Exclude = %q, want %q", feed.Exclude, "exclude text")
-}
+	if feed.Exclude != "exclude text" {
+		t.Errorf("Exclude = %q, want %q", feed.Exclude, "exclude text")
+	}
 	if feed.Expiration != 7200 {
 		t.Errorf("Expiration = %d, want %d", feed.Expiration, 7200)
 	}
@@ -452,14 +452,14 @@ func TestResolveCookiesFile_RelativePath(t *testing.T) {
 		{
 			name:        "relative path with unix separator",
 			cookiesFile: ".cookies",
-			tomlPath:    "/home/user/.config/rss2cloud/config.toml",
-			want:        "/home/user/.config/rss2cloud/.cookies",
+			tomlPath:    "/home/user/.config/anifeed/config.toml",
+			want:        "/home/user/.config/anifeed/.cookies",
 		},
 		{
 			name:        "relative path with subdirectory",
 			cookiesFile: "auth/.cookies",
-			tomlPath:    "/home/user/.config/rss2cloud/config.toml",
-			want:        "/home/user/.config/rss2cloud/auth/.cookies",
+			tomlPath:    "/home/user/.config/anifeed/config.toml",
+			want:        "/home/user/.config/anifeed/auth/.cookies",
 		},
 		{
 			name:        "relative path in current directory",
@@ -488,14 +488,14 @@ func TestResolveCookiesFile_AbsolutePath(t *testing.T) {
 	}{
 		{
 			name:        "absolute unix path",
-			cookiesFile: "/etc/rss2cloud/.cookies",
-			tomlPath:    "/home/user/.config/rss2cloud/config.toml",
-			want:        "/etc/rss2cloud/.cookies",
+			cookiesFile: "/etc/anifeed/.cookies",
+			tomlPath:    "/home/user/.config/anifeed/config.toml",
+			want:        "/etc/anifeed/.cookies",
 		},
 		{
 			name:        "absolute windows path",
 			cookiesFile: "C:/Users/user/.cookies",
-			tomlPath:    "C:/Users/user/.config/rss2cloud/config.toml",
+			tomlPath:    "C:/Users/user/.config/anifeed/config.toml",
 			want:        "C:/Users/user/.cookies",
 		},
 	}

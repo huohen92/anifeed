@@ -180,7 +180,7 @@ func TestReadNodeSiteConfigFromUserConfigDir(t *testing.T) {
 	t.Setenv("HOMEDRIVE", "")
 	t.Setenv("HOMEPATH", "")
 
-	configDir := filepath.Join(homeDir, ".config", "rss2cloud")
+	configDir := filepath.Join(homeDir, ".config", "anifeed")
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatalf("failed to create config dir: %v", err)
 	}

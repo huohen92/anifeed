@@ -6,10 +6,11 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/zhifengle/rss2cloud/config"
-	"github.com/zhifengle/rss2cloud/p115"
-	"github.com/zhifengle/rss2cloud/rsssite"
-	"github.com/zhifengle/rss2cloud/server"
+	"github.com/zhifengle/anifeed/config"
+	"github.com/zhifengle/anifeed/p115"
+	"github.com/zhifengle/anifeed/request"
+	"github.com/zhifengle/anifeed/rsssite"
+	"github.com/zhifengle/anifeed/version"
 )
 
 var (
@@ -25,8 +26,9 @@ var (
 	cooldownMaxMs int
 	clearTaskNum  int
 	rootCmd       = &cobra.Command{
-		Use:   "rss2cloud",
-		Short: `Add offline tasks to 115`,
+		Use:     "anifeed",
+		Short:   `Add offline tasks to 115`,
+		Version: version.Version,
 		Run: func(_cmd *cobra.Command, _args []string) {
 			initAgent(_cmd)
 			if rssJsonPath != "" {
@@ -77,17 +79,6 @@ var (
 			pAgent.AddMagnetTask(magnets, cid, savepath)
 		},
 	}
-	// server subcommand
-	port int
-
-	serverCmd = &cobra.Command{
-		Use:   "server",
-		Short: `Start server`,
-		Run: func(_cmd *cobra.Command, _args []string) {
-			cfg := initAgent(_cmd)
-			server.New(pAgent, cfg.Server.Port).StartServer()
-		},
-	}
 )
 
 func Execute() {
@@ -113,9 +104,6 @@ func init() {
 	rootCmd.PersistentFlags().IntVar(&cooldownMaxMs, "cooldown-max-ms", 1100, "maximum cooldown between 115 API calls in milliseconds. default 1100")
 	rootCmd.Flags().IntVar(&clearTaskNum, "clear-task-type", 0, "clear offline task type: 1-6.\n 1: OfflineClearDone\n 2: OfflineClearAll\n 3: OfflineClearFailed\n 4: OfflineClearRunning\n 5: OfflineClearDoneAndDelete\n 6: OfflineClearAllAndDelete")
 	rootCmd.AddCommand(magnetCmd)
-	// server subcommand
-	serverCmd.Flags().IntVarP(&port, "port", "p", 8115, "server port")
-	rootCmd.AddCommand(serverCmd)
 }
 
 func buildCLIParams(cmd *cobra.Command) config.CLIParams {
@@ -147,6 +135,10 @@ func buildCLIParams(cmd *cobra.Command) config.CLIParams {
 		cliParams.Port = port
 		cliParams.PortSet = true
 	}
+	if cmd != nil && cmd.Flags().Changed("host") {
+		cliParams.Host = host
+		cliParams.HostSet = true
+	}
 	return cliParams
 }
 
@@ -157,22 +149,34 @@ func commandFlagChanged(cmd *cobra.Command, name string) bool {
 	return cmd.Flags().Changed(name) || cmd.InheritedFlags().Changed(name) || cmd.PersistentFlags().Changed(name)
 }
 
-func initAgent(cmd *cobra.Command) *config.Config {
+func loadConfig(cmd *cobra.Command) (*config.Config, *config.ConfigSource) {
 	cliParams := buildCLIParams(cmd)
 
-	cfg, _, err := config.LoadWithOptions(cliParams, config.LoadOptions{Auth: true})
+	cfg, source, err := config.LoadWithOptions(cliParams, config.LoadAllOptions())
 	if err != nil {
 		log.Fatalln(err)
 	}
 
 	p115.SetOption(p115.Option{
-		DisableCache:  cfg.P115.DisableCache,
-		ChunkDelay:    cfg.P115.ChunkDelay,
-		ChunkSize:     cfg.P115.ChunkSize,
-		CooldownMinMs: cfg.P115.CooldownMinMs,
-		CooldownMaxMs: cfg.P115.CooldownMaxMs,
-		DatabasePath:  cfg.Database.Path,
+		DisableCache:       cfg.P115.DisableCache,
+		ChunkDelay:         cfg.P115.ChunkDelay,
+		ChunkSize:          cfg.P115.ChunkSize,
+		CooldownMinMs:      cfg.P115.CooldownMinMs,
+		CooldownMaxMs:      cfg.P115.CooldownMaxMs,
+		Retry:              cfg.Offline.Retry,
+		PostProcess:        cfg.Rename.Enabled || cfg.Offline.DualFolder,
+		OnePerEpisode:      cfg.Offline.OnePerEpisode,
+		DatabasePath:       cfg.Database.Path,
+		PreferredSubgroups: cfg.Lab.PreferredSubgroups,
 	})
+	if err := request.ReloadConfig(); err != nil {
+		log.Printf("[warning] 加载站点配置失败: %v", err)
+	}
+	return cfg, source
+}
+
+func initAgent(cmd *cobra.Command) *config.Config {
+	cfg, _ := loadConfig(cmd)
 
 	var agentErr error
 	if qrLogin {

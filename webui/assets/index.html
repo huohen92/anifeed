@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>AniFeed</title>
+  <meta name="description" content="AniFeed Web 控制台：管理 RSS 订阅、运行离线任务、查看 115 任务与历史记录。">
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="stylesheet" href="/styles.css?v=20261022b">
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#/dashboard" aria-label="AniFeed">
+        <span class="brand-mark"><img src="/logo.png" alt="AniFeed logo"></span>
+        <span class="brand-text">
+          <strong>AniFeed</strong>
+          <small>RSS → 115 离线</small>
+        </span>
+      </a>
+
+      <nav class="nav" aria-label="主导航">
+        <a class="nav-item" href="#/dashboard" data-route="dashboard">
+          <span class="nav-icon" data-icon="dashboard"></span><span>概览</span>
+        </a>
+        <a class="nav-item" href="#/feeds" data-route="feeds">
+          <span class="nav-icon" data-icon="rss"></span><span>订阅管理</span>
+        </a>
+        <a class="nav-item" href="#/tasks" data-route="tasks">
+          <span class="nav-icon" data-icon="tasks"></span><span>离线任务</span>
+        </a>
+        <a class="nav-item" href="#/history" data-route="history">
+          <span class="nav-icon" data-icon="history"></span><span>历史记录</span>
+        </a>
+        <a class="nav-item" href="#/logs" data-route="logs">
+          <span class="nav-icon" data-icon="logs"></span><span>运行日志</span>
+        </a>
+        <a class="nav-item" href="#/settings" data-route="settings">
+          <span class="nav-icon" data-icon="settings"></span><span>设置</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="version-line">
+          <span class="pulse-dot" id="side-dot"></span>
+          <span id="side-status">未连接</span>
+        </div>
+        <span class="version-text" id="version-text">AniFeed</span>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h1 id="page-title">概览</h1>
+          <span id="page-subtitle" class="page-subtitle"></span>
+        </div>
+        <div class="topbar-actions">
+          <a class="login-pill" id="login-pill" href="#/settings">
+            <span class="dot"></span><span id="login-pill-text">检测登录状态</span>
+          </a>
+          <button class="icon-btn" id="theme-btn" aria-label="切换主题" title="切换浅色 / 深色">
+            <span data-icon="moon"></span>
+          </button>
+        </div>
+      </header>
+
+      <main class="view" id="view">
+        <div class="page-loading"><span class="spinner"></span><span>正在加载控制台…</span></div>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal-root" id="modal-root"></div>
+  <div class="toast-root" id="toast-root" aria-live="polite"></div>
+
+  <div class="token-gate hidden" id="token-gate">
+    <form class="token-card" id="token-form">
+      <div class="token-logo"><img src="/logo.png" alt="AniFeed"><strong>AniFeed</strong></div>
+      <h2>需要访问令牌</h2>
+      <p>该 AniFeed 实例在 config.toml 中设置了 <code>server.access_token</code>，请输入令牌后继续。</p>
+      <label class="field">
+        <span>访问令牌</span>
+        <input class="input" id="token-input" type="password" autocomplete="current-password" placeholder="X-Access-Token">
+      </label>
+      <p class="form-error hidden" id="token-error"></p>
+      <button class="btn btn-primary btn-block" type="submit">进入控制台</button>
+    </form>
+  </div>
+
+  <div class="auth-gate hidden" id="auth-gate">
+    <form class="auth-card" id="auth-form">
+      <div class="auth-logo"><img src="/logo.png" alt="AniFeed"><strong>AniFeed</strong><small>RSS → 115 离线</small></div>
+      <h2 id="auth-title" class="hidden"></h2>
+      <p id="auth-desc" class="hidden"></p>
+      <label class="field"><span>账号</span><input class="input" id="auth-user" autocomplete="username" required></label>
+      <label class="field"><span>密码</span><input class="input" id="auth-pass" type="password" autocomplete="current-password" required></label>
+      <label class="field hidden" id="auth-confirm-field"><span>确认密码</span><input class="input" id="auth-confirm" type="password" autocomplete="new-password"></label>
+      <label class="check auth-remember"><input type="checkbox" id="auth-remember">记住账号密码</label>
+      <p class="form-error hidden" id="auth-error"></p>
+      <button class="btn btn-primary btn-block" id="auth-submit" type="submit">登录</button>
+    </form>
+  </div>
+
+  <nav class="mobile-tabs" aria-label="移动端导航">
+    <a href="#/dashboard" data-mobile-route="dashboard"><span data-icon="dashboard"></span><span>概览</span></a>
+    <a href="#/feeds" data-mobile-route="feeds"><span data-icon="rss"></span><span>订阅</span></a>
+    <a href="#/tasks" data-mobile-route="tasks"><span data-icon="tasks"></span><span>任务</span></a>
+    <a href="#/logs" data-mobile-route="logs"><span data-icon="logs"></span><span>日志</span></a>
+    <a href="#/settings" data-mobile-route="settings"><span data-icon="settings"></span><span>设置</span></a>
+  </nav>
+
+  <script src="/app.js?v=20261022b"></script>
+</body>
+</html>

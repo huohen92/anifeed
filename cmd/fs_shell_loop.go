@@ -13,7 +13,7 @@ import (
 
 	"github.com/reeflective/readline"
 
-	"github.com/zhifengle/rss2cloud/cloudfs"
+	"github.com/zhifengle/anifeed/cloudfs"
 )
 
 var errNonInteractiveShell = errors.New("fs shell requires an interactive terminal")
@@ -140,7 +140,7 @@ func newShellReadline(ctx context.Context, session *cloudfs.Session, historyFile
 		return fmt.Sprintf("%s:%s> ", session.Provider(), session.Pwd())
 	})
 	rl.History.Delete()
-	rl.History.Add("rss2cloud fs shell", history)
+	rl.History.Add("anifeed fs shell", history)
 	rl.Completer = func(line []rune, cursor int) readline.Completions {
 		return shellReadlineCompletions(ctx, session, string(line), cursor)
 	}

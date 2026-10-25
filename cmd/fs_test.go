@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zhifengle/rss2cloud/cloudfs"
+	"github.com/zhifengle/anifeed/cloudfs"
 )
 
 // --- minimal in-memory driver for cmd-layer tests ---

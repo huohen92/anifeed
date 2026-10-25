@@ -459,7 +459,7 @@ func TestLoad_NoConfigFiles(t *testing.T) {
 	if len(cfg.RSS) != 0 {
 		t.Errorf("Expected empty RSS, got %d entries", len(cfg.RSS))
 	}
-	// Note: Sites may contain entries from ~/.config/rss2cloud/node-site-config.json or ~/node-site-config.json
+	// Note: Sites may contain entries from ~/.config/anifeed/node-site-config.json or ~/node-site-config.json
 	// This is expected behavior as the legacy loader searches in those locations
 	// We only verify that RSS is empty since we control that in the temp directory
 }

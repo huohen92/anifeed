@@ -1,21 +1,21 @@
 # Linux systemd 安装
 
-本文说明如何在 Linux systemd 环境下安装 `rss2cloud` 并注册为系统服务。
+本文说明如何在 Linux systemd 环境下安装 `anifeed` 并注册为系统服务。
 
 ## 安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zhifengle/rss2cloud/main/scripts/install-release.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/zhifengle/anifeed/main/scripts/install-release.sh | sudo bash
 ```
 
 安装脚本会执行以下操作：
 
-- 下载 GitHub latest release 中的 `rss2cloud-<version>-linux-amd64-musl.tar.gz`。
-- 安装二进制到 `/usr/local/bin/rss2cloud`。
-- 创建运行目录 `/var/lib/rss2cloud`。
-- 按推荐方式初始化 `config.toml` 到 `/var/lib/rss2cloud/config.toml`。
-- 创建 cookies 文件 `/var/lib/rss2cloud/.cookies`。
-- 写入 systemd service：`/etc/systemd/system/rss2cloud.service`。
+- 下载 GitHub latest release 中的 `anifeed-<version>-linux-amd64-musl.tar.gz`。
+- 安装二进制到 `/usr/local/bin/anifeed`。
+- 创建运行目录 `/var/lib/anifeed`。
+- 按推荐方式初始化 `config.toml` 到 `/var/lib/anifeed/config.toml`。
+- 创建 cookies 文件 `/var/lib/anifeed/.cookies`。
+- 写入 systemd service：`/etc/systemd/system/anifeed.service`。
 
 当前 release workflow 只发布 `linux amd64` musl 二进制，所以脚本也只支持 Linux amd64。
 
@@ -23,12 +23,12 @@ curl -fsSL https://raw.githubusercontent.com/zhifengle/rss2cloud/main/scripts/in
 
 ## 推荐配置目录
 
-服务的 `WorkingDirectory` 是 `/var/lib/rss2cloud`。
+服务的 `WorkingDirectory` 是 `/var/lib/anifeed`。
 
 因此程序会优先读取当前工作目录的配置：
 
 ```text
-/var/lib/rss2cloud/config.toml
+/var/lib/anifeed/config.toml
 ```
 
 默认生成的配置：
@@ -47,22 +47,22 @@ path = "db.sqlite"
 对应文件位置：
 
 ```text
-/var/lib/rss2cloud/config.toml
-/var/lib/rss2cloud/.cookies
-/var/lib/rss2cloud/db.sqlite
+/var/lib/anifeed/config.toml
+/var/lib/anifeed/.cookies
+/var/lib/anifeed/db.sqlite
 ```
 
 如果需要继续使用传统配置，也可以把文件放到同一目录：
 
 ```text
-/var/lib/rss2cloud/rss.json
-/var/lib/rss2cloud/node-site-config.json
+/var/lib/anifeed/rss.json
+/var/lib/anifeed/node-site-config.json
 ```
 
 如果手动写入 cookies，可以直接覆盖安装脚本创建的文件：
 
 ```bash
-sudo install -m 600 /path/to/.cookies /var/lib/rss2cloud/.cookies
+sudo install -m 600 /path/to/.cookies /var/lib/anifeed/.cookies
 ```
 
 ## 服务管理
@@ -70,36 +70,36 @@ sudo install -m 600 /path/to/.cookies /var/lib/rss2cloud/.cookies
 配置文件准备好后启动服务：
 
 ```bash
-sudo systemctl enable --now rss2cloud
+sudo systemctl enable --now anifeed
 ```
 
 查看状态：
 
 ```bash
-sudo systemctl status rss2cloud
+sudo systemctl status anifeed
 ```
 
 查看日志：
 
 ```bash
-sudo journalctl -u rss2cloud -f
+sudo journalctl -u anifeed -f
 ```
 
 重启服务：
 
 ```bash
-sudo systemctl restart rss2cloud
+sudo systemctl restart anifeed
 ```
 
 服务默认执行：
 
 ```bash
-/usr/local/bin/rss2cloud server
+/usr/local/bin/anifeed server
 ```
 
 端口从 `config.toml` 的 `[server].port` 读取。
 
-服务不再创建额外系统用户和用户组。systemd unit 会限制进程不提权、使用私有临时目录，并将系统目录设为只读；运行时数据只写入 `/var/lib/rss2cloud`。
+服务不再创建额外系统用户和用户组。systemd unit 会限制进程不提权、使用私有临时目录，并将系统目录设为只读；运行时数据只写入 `/var/lib/anifeed`。
 
 HTTP 接口示例：
 
@@ -111,10 +111,10 @@ curl -d '{"tasks":["magnet:?xt=urn:btih:xx"],"cid":"12345","savepath":"文件夹
 
 ## 定时执行 RSS 离线任务
 
-如果希望定时执行 RSS 离线任务，cron 中需要显式进入安装目录，确保读取 `/var/lib/rss2cloud/config.toml`：
+如果希望定时执行 RSS 离线任务，cron 中需要显式进入安装目录，确保读取 `/var/lib/anifeed/config.toml`：
 
 ```cron
-10 8 * * * cd /var/lib/rss2cloud && /usr/local/bin/rss2cloud >> /var/log/rss2cloud-cron.log 2>&1
+10 8 * * * cd /var/lib/anifeed && /usr/local/bin/anifeed >> /var/log/anifeed-cron.log 2>&1
 ```
 
 这里执行的是普通 RSS 任务，不是 `server`。服务模式继续使用 systemd 管理。
@@ -128,11 +128,11 @@ curl -d '{"tasks":["magnet:?xt=urn:btih:xx"],"cid":"12345","savepath":"文件夹
 卸载服务和二进制，保留配置、cookies 和数据库：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zhifengle/rss2cloud/main/scripts/install-release.sh | sudo bash -s -- uninstall
+curl -fsSL https://raw.githubusercontent.com/zhifengle/anifeed/main/scripts/install-release.sh | sudo bash -s -- uninstall
 ```
 
 同时删除配置、cookies 和数据库：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zhifengle/rss2cloud/main/scripts/install-release.sh | sudo bash -s -- purge
+curl -fsSL https://raw.githubusercontent.com/zhifengle/anifeed/main/scripts/install-release.sh | sudo bash -s -- purge
 ```

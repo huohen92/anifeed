@@ -11,7 +11,7 @@ import (
 	"github.com/reeflective/readline"
 )
 
-const defaultHistoryFile = ".rss2cloud_shell_history"
+const defaultHistoryFile = ".anifeed_shell_history"
 
 type readlineHistoryEntry struct {
 	DateTime string `json:"datetime"`

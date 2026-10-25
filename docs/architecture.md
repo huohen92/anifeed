@@ -1,8 +1,8 @@
-# rss2cloud 架构文档
+# anifeed 架构文档
 
 ## 1. 项目定位
 
-`rss2cloud` 是一个将 RSS 订阅条目转换为 115 网盘离线任务的 Go 命令行工具，同时提供一个简易 HTTP 服务接口用于批量提交磁力链接。
+`anifeed` 是一个将 RSS 订阅条目转换为 115 网盘离线任务的 Go 命令行工具，同时提供一个简易 HTTP 服务接口用于批量提交磁力链接。
 
 项目当前包含两条并行演进的能力线：
 
@@ -54,10 +54,10 @@
 
 ### 2.4 额外本地状态文件
 
-- `.rss2cloud_shell_state.json`
+- `.anifeed_shell_state.json`
   - `fs shell` 会话状态。
   - 当前用于保存上一次 `cwd`。
-- `.rss2cloud_shell_history`
+- `.anifeed_shell_history`
   - `fs shell` 历史记录文件。
   - 当前使用 `reeflective/readline` 的 JSONL 历史格式。
 
@@ -67,7 +67,7 @@
 
 ### 3.1 CLI 默认模式
 
-执行 `rss2cloud` 后：
+执行 `anifeed` 后：
 
 1. 初始化 115 Agent。
 2. 读取 `rss.json`。
@@ -78,18 +78,18 @@
 
 ### 3.2 CLI 单次任务模式
 
-- `rss2cloud -u <rss-url>`
+- `anifeed -u <rss-url>`
   - 仅处理单个 RSS URL。
-- `rss2cloud magnet --link ...`
+- `anifeed magnet --link ...`
   - 直接提交单个 magnet/ed2k/http 链接。
-- `rss2cloud magnet --text ...`
+- `anifeed magnet --text ...`
   - 从文本文件逐行读取链接后批量提交。
-- `rss2cloud --clear-task-type <n>`
+- `anifeed --clear-task-type <n>`
   - 调用 115 清理离线任务。
 
 ### 3.3 HTTP Server 模式
 
-执行 `rss2cloud server` 后：
+执行 `anifeed server` 后：
 
 1. 初始化 115 Agent。
 2. 启动 HTTP 服务，默认监听 `:8115`。
@@ -100,7 +100,7 @@
 
 ### 3.4 `fs` 文件系统模式
 
-执行 `rss2cloud fs ...` 后：
+执行 `anifeed fs ...` 后：
 
 1. 初始化 115 Agent。
 2. 构造 `p115.FileSystem` provider。
@@ -121,7 +121,7 @@
   - `flatten`
   - `search-mv`
 - 交互式 shell：
-  - `rss2cloud fs shell`
+  - `anifeed fs shell`
 
 ## 4. 模块划分
 
@@ -131,7 +131,7 @@
 
 - `main.go`
   - 程序入口，仅调用 `cmd.Execute()`。
-- `cmd/rss2cloud.go`
+- `cmd/anifeed.go`
   - CLI 编排层。
   - 负责解析命令行参数、初始化 115 Agent、切换运行模式。
 
@@ -341,7 +341,7 @@ CLI / shell
 ### 8.1 测试环境依赖
 
 - `store` 测试依赖 `go-sqlite3`，在 `CGO_ENABLED=0` 环境下会失败。
-- `rsssite` 的真实公网 RSS 探测需要设置 `RSS2CLOUD_TEST_LIVE=1` 才会执行。
+- `rsssite` 的真实公网 RSS 探测需要设置 `ANIFEED_TEST_LIVE=1` 才会执行。
 
 ### 8.2 提交历史持久化语义
 
@@ -378,6 +378,6 @@ CLI / shell
 
 ## 10. 一句话总结
 
-当前 `rss2cloud` 的架构可以概括为：
+当前 `anifeed` 的架构可以概括为：
 
 一个以 `p115.Agent` 为中心的命令行/服务双入口应用，前面接 RSS 站点适配器与 HTTP 请求层，后面接 115 API 与 SQLite 本地缓存，用最小结构完成“抓取 RSS -> 提取 magnet -> 去重 -> 提交 115”这条主业务链路。

@@ -3,13 +3,14 @@ package p115
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/deadblue/elevengo"
 	llErrors "github.com/deadblue/elevengo/lowlevel/errors"
 	"github.com/deadblue/elevengo/option"
-	"github.com/zhifengle/rss2cloud/cloudfs"
+	"github.com/zhifengle/anifeed/cloudfs"
 )
 
 // FileSystemOption holds provider-level configuration for FileSystem.
@@ -277,4 +278,33 @@ func NewOperationLimiter(minMs, maxMs int) cloudfs.Limiter {
 	min := time.Duration(minMs) * time.Millisecond
 	max := time.Duration(maxMs) * time.Millisecond
 	return cloudfs.NewCooldownLimiter(min, max)
+}
+
+// ListDirectories lists only subdirectories of dirID, stopping after limit
+// entries. It is intended for the Web UI folder picker.
+func (ag *Agent) ListDirectories(dirID string, limit int) (dirs []cloudfs.Entry, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			dirs = nil
+			err = fmt.Errorf("115 目录接口异常: %v", recovered)
+		}
+	}()
+	if dirID == "" {
+		dirID = "0"
+	}
+	it, err := ag.Agent.FileIterate(dirID)
+	if err != nil {
+		return nil, err
+	}
+	dirs = make([]cloudfs.Entry, 0, 64)
+	for _, file := range it.Items() {
+		if !file.IsDirectory {
+			continue
+		}
+		dirs = append(dirs, entryFromFile(file))
+		if limit > 0 && len(dirs) >= limit {
+			break
+		}
+	}
+	return dirs, nil
 }

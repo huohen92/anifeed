@@ -7,7 +7,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/zhifengle/rss2cloud/rsssite"
+	"github.com/zhifengle/anifeed/rsssite"
 )
 
 func TestStore(t *testing.T) {
@@ -222,5 +222,174 @@ func TestListHistoryNullColumns(t *testing.T) {
 	}
 	if items[0].Title != "legacy item" {
 		t.Errorf("Title = %q, want %q", items[0].Title, "legacy item")
+	}
+}
+
+func TestPostProcessLifecycle(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(db)
+	defer s.Close()
+	items := []rsssite.MagnetItem{{Title: "[Sub] Anime - 01", Magnet: "magnet:?xt=urn:btih:abc"}}
+	if err := s.SaveMagnetItemsWithPostprocess(items, "番剧", "https://example.com/rss", []string{"hash-post"}, "cid-1", 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := s.ListPendingPostTasks(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("pending = %+v", pending)
+	}
+	if pending[0].TaskHash != "hash-post" || pending[0].ConfigName != "番剧" || pending[0].OfflineCid != "cid-1" {
+		t.Fatalf("pending row = %+v", pending[0])
+	}
+	count, err := s.CountPendingPostTasks()
+	if err != nil || count != 1 {
+		t.Fatalf("count = %d, err = %v", count, err)
+	}
+	if err := s.CompletePostTask("hash-post"); err != nil {
+		t.Fatal(err)
+	}
+	if count, _ := s.CountPendingPostTasks(); count != 0 {
+		t.Fatalf("count after complete = %d", count)
+	}
+}
+
+func TestPostProcessFailureRetries(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(db)
+	defer s.Close()
+	if err := s.SaveMagnetItemsWithPostprocess([]rsssite.MagnetItem{{Title: "x", Magnet: "magnet:?xt=urn:btih:x"}}, "a", "https://a", []string{"h"}, "", 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := s.FailPostTask("h", "temporary", 3); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if count, _ := s.CountPendingPostTasks(); count != 1 {
+		t.Fatalf("should still be pending after 2 attempts, count=%d", count)
+	}
+	if err := s.FailPostTask("h", "final", 3); err != nil {
+		t.Fatal(err)
+	}
+	if count, _ := s.CountPendingPostTasks(); count != 0 {
+		t.Fatalf("should be failed after 3 attempts, count=%d", count)
+	}
+}
+
+func TestPreviewDecisionsRoundTrip(t *testing.T) {
+	st, err := NewWithPath(filepath.Join(t.TempDir(), "test.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	decisions := map[string]bool{"a": true, "b": false}
+	if err := st.SavePreviewDecisions("https://example.com/rss", decisions); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.PreviewDecisions("https://example.com/rss")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || !got["a"] || got["b"] {
+		t.Fatalf("decisions = %+v", got)
+	}
+}
+
+func TestDeleteDownloadedByMagnets(t *testing.T) {
+	st, err := NewWithPath(filepath.Join(t.TempDir(), "test.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	_, err = st.DBInstance.Exec("INSERT INTO rss_items (title, magnet, taskHash, createdAt, updatedAt) VALUES (?, ?, ?, datetime('now'), datetime('now'))", "t", "magnet:?xt=urn:btih:a", "hash-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DBInstance.Exec("INSERT INTO offline_postprocess (task_hash, title, config_name, offline_cid, state, created_at, updated_at) VALUES (?, ?, ?, ?, 'pending', datetime('now'), datetime('now'))", "hash-a", "t", "feed", "cid"); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := st.DeleteDownloadedByMagnets([]string{"magnet:?xt=urn:btih:a"})
+	if err != nil || deleted != 1 {
+		t.Fatalf("deleted=%d err=%v", deleted, err)
+	}
+	if st.HasItem("magnet:?xt=urn:btih:a") {
+		t.Fatal("history still present")
+	}
+	var count int
+	st.DBInstance.QueryRow("SELECT count(*) FROM offline_postprocess WHERE task_hash = 'hash-a'").Scan(&count)
+	if count != 0 {
+		t.Fatal("postprocess still present")
+	}
+}
+
+func TestFinalEntriesRoundTrip(t *testing.T) {
+	st, err := NewWithPath(filepath.Join(t.TempDir(), "test.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	_, err = st.DBInstance.Exec("INSERT INTO offline_postprocess (task_hash,title,config_name,offline_cid,state,created_at,updated_at) VALUES ('h1','t','feed','cid','pending',datetime('now'),datetime('now'))")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := []PostEntry{{ID: "v1", Name: "video.mkv"}, {ID: "s1", Name: "video.sc.ass"}}
+	if err := st.CompletePostTaskWithEntries("h1", entries); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.FinalEntriesForTaskHashes([]string{"h1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got["h1"]) != 2 || got["h1"][0].ID != "v1" || got["h1"][1].Name != "video.sc.ass" {
+		t.Fatalf("entries = %+v", got)
+	}
+}
+
+func TestIdleReminderDedup(t *testing.T) {
+	st, err := NewWithPath(filepath.Join(t.TempDir(), "test.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	first, err := st.MarkIdleReminder("https://example.com/rss", "2026-10-19")
+	if err != nil || !first {
+		t.Fatalf("first = %v err=%v", first, err)
+	}
+	second, err := st.MarkIdleReminder("https://example.com/rss", "2026-10-19")
+	if err != nil || second {
+		t.Fatalf("second = %v err=%v", second, err)
+	}
+}
+
+func TestFailedTaskHashesAndDelete(t *testing.T) {
+	st, err := NewWithPath(filepath.Join(t.TempDir(), "test.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	items := []rsssite.MagnetItem{{Link: "l", Title: "t", Magnet: "magnet:?xt=urn:btih:a"}}
+	if err := st.SaveMagnetItemsWithPostprocess(items, "番剧", "https://example.com/rss", []string{"hash-a"}, "cid", 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.FailPostTask("hash-a", "failed", 1); err != nil {
+		t.Fatal(err)
+	}
+	hashes, err := st.FailedTaskHashesForFeed("https://example.com/rss", "")
+	if err != nil || len(hashes) != 1 || hashes[0] != "hash-a" {
+		t.Fatalf("hashes=%v err=%v", hashes, err)
+	}
+	if err := st.DeleteTaskRecords(hashes); err != nil {
+		t.Fatal(err)
+	}
+	if st.HasItem("magnet:?xt=urn:btih:a") {
+		t.Fatal("history row was not deleted")
 	}
 }

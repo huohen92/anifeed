@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/rivo/uniseg"
-	"github.com/zhifengle/rss2cloud/store"
+	"github.com/zhifengle/anifeed/store"
 )
 
 func TestPrintHistoryItemsCompactsAndAlignsMixedWidthText(t *testing.T) {

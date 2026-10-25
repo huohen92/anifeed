@@ -163,16 +163,16 @@ func TestLoadLegacySites_FileExists(t *testing.T) {
 
 func TestLoadLegacySites_FileNotFound(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	// Set HOME to tmpDir to isolate from real config files
 	t.Setenv("HOME", tmpDir)
 	t.Setenv("USERPROFILE", tmpDir)
 	t.Setenv("HOMEDRIVE", "")
 	t.Setenv("HOMEPATH", "")
-	
+
 	oldWd, _ := os.Getwd()
 	defer os.Chdir(oldWd)
-	
+
 	// Create an isolated work directory
 	workDir := filepath.Join(tmpDir, "work")
 	err := os.Mkdir(workDir, 0755)
@@ -269,6 +269,10 @@ func TestLoadLegacyCookies_PermissionDenied(t *testing.T) {
 	// Skip on Windows as permission handling is different
 	if os.Getenv("OS") == "Windows_NT" {
 		t.Skip("Skipping permission test on Windows")
+	}
+	// root ignores file permission bits, so this test cannot observe EACCES
+	if os.Geteuid() == 0 {
+		t.Skip("Skipping permission test when running as root")
 	}
 
 	tmpDir := t.TempDir()

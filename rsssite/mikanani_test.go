@@ -49,9 +49,9 @@ func TestMikananiSearchWithoutExcludeKeepsItems(t *testing.T) {
 }
 
 func TestMikananiSearchLiveSnapshot(t *testing.T) {
-	path := os.Getenv("RSS2CLOUD_MIKANANI_LIVE_XML")
+	path := os.Getenv("ANIFEED_MIKANANI_LIVE_XML")
 	if path == "" {
-		t.Skip("set RSS2CLOUD_MIKANANI_LIVE_XML to a downloaded live RSS file")
+		t.Skip("set ANIFEED_MIKANANI_LIVE_XML to a downloaded live RSS file")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
