@@ -34,7 +34,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}
-          name: Release ${{ inputs.release_tag }}
+          name: AniFeed ${{ inputs.release_tag }}
           body_path: ./CHANGELOG.md
           prerelease: ${{ env.IS_PRERELEASE }}
 

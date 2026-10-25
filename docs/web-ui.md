@@ -1,6 +1,6 @@
 # Web UI 使用文档
 
-anifeed 的 Web UI 与 CLI 共用同一套配置和数据库。启动：
+AniFeed 的 Web UI 与 CLI 共用同一套配置和数据库。启动：
 
 ```bash
 ./anifeed server
@@ -266,7 +266,7 @@ anifeed 的 Web UI 与 CLI 共用同一套配置和数据库。启动：
 纯文本示例：
 
 ```text
-anifeed 全部订阅运行完成
+AniFeed 全部订阅运行完成
 状态：成功
 订阅：4，匹配：20，新增：3
 时间：2026-10-19T08:00:00+08:00

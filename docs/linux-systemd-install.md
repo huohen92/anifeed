@@ -1,6 +1,6 @@
 # Linux systemd 安装
 
-本文说明如何在 Linux systemd 环境下安装 `anifeed` 并注册为系统服务。
+本文说明如何在 Linux systemd 环境下安装 AniFeed 并注册为系统服务。
 
 ## 安装
 

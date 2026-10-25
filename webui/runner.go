@@ -409,7 +409,7 @@ func postWeCom(webhook, content string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "anifeed-wecom/1.0")
+	req.Header.Set("User-Agent", "AniFeed-wecom/1.0")
 	client := request.NewIPv4Client(10 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
@@ -439,7 +439,7 @@ func postPlainWebhook(webhook, content string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
-	req.Header.Set("User-Agent", "anifeed-webhook/1.0")
+	req.Header.Set("User-Agent", "AniFeed-webhook/1.0")
 	client := request.NewIPv4Client(10 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
