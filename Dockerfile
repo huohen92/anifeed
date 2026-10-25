@@ -8,24 +8,30 @@ ENV GOPROXY=${GOPROXY} \
     CGO_ENABLED=1 \
     GOOS=linux
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates musl-tools tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go build -trimpath -ldflags "-s -w -X github.com/huohen92/anifeed/version.Version=${ANIFEED_VERSION}" \
+RUN CC=musl-gcc go build -trimpath \
+    -ldflags "-s -w -extldflags -static -X github.com/huohen92/anifeed/version.Version=${ANIFEED_VERSION}" \
     -o /out/anifeed .
 
-FROM debian:bookworm-slim
+FROM scratch
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tzdata \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /data
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=build /out/anifeed /usr/local/bin/anifeed
 
-EXPOSE 8115
-VOLUME ["/data"]
+ENV TZ=Asia/Shanghai
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-ENTRYPOINT ["anifeed"]
+WORKDIR /data
+VOLUME ["/data"]
+EXPOSE 8115
+
+ENTRYPOINT ["/usr/local/bin/anifeed"]
 CMD ["server"]
