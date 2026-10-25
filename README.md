@@ -61,9 +61,33 @@ go build -o anifeed .
 
 ### Docker
 
+从 Docker Hub 拉取：
+
+```bash
+docker pull huohen92/anifeed:0.02
+docker run -d \
+  --name anifeed \
+  --restart unless-stopped \
+  -p 8115:8115 \
+  -v "$PWD/data:/data" \
+  -e TZ=Asia/Shanghai \
+  huohen92/anifeed:0.02
+# 打开 http://服务器IP:8115
+```
+
+镜像地址：
+
+```text
+huohen92/anifeed:0.02
+huohen92/anifeed:latest
+```
+
+当前镜像为 `linux/amd64`，基于 scratch + 静态 musl 二进制，体积约 8 MB。
+
+也可以从源码构建：
+
 ```bash
 docker compose up -d --build
-# 打开 http://服务器IP:8115
 ```
 
 数据（`config.toml`、`.cookies`、`db.sqlite`）保存在 `./data` 目录。
