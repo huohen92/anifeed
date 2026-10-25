@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zhifengle/anifeed/cloudfs"
+	"github.com/huohen92/anifeed/cloudfs"
 )
 
 type fsEntryView struct {

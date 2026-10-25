@@ -7,10 +7,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/huohen92/anifeed/cloudfs"
+	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/p115"
 	"github.com/spf13/cobra"
-	"github.com/zhifengle/anifeed/cloudfs"
-	"github.com/zhifengle/anifeed/config"
-	"github.com/zhifengle/anifeed/p115"
 )
 
 // fs-level shared flags

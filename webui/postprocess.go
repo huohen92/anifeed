@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/deadblue/elevengo"
-	"github.com/zhifengle/anifeed/cloudfs"
-	"github.com/zhifengle/anifeed/config"
-	"github.com/zhifengle/anifeed/p115"
-	"github.com/zhifengle/anifeed/store"
+	"github.com/huohen92/anifeed/cloudfs"
+	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/p115"
+	"github.com/huohen92/anifeed/store"
 )
 
 var (

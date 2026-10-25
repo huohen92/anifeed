@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zhifengle/anifeed/p115"
+	"github.com/huohen92/anifeed/p115"
 )
 
 // Job is an asynchronous feed run shown in the UI.

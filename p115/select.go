@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/zhifengle/anifeed/rsssite"
+	"github.com/huohen92/anifeed/rsssite"
 )
 
 var versionPattern = regexp.MustCompile(`(?i)v(\d+)`)

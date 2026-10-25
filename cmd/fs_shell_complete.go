@@ -6,7 +6,7 @@ import (
 
 	"github.com/reeflective/readline"
 
-	"github.com/zhifengle/anifeed/cloudfs"
+	"github.com/huohen92/anifeed/cloudfs"
 )
 
 // shellCommands is the fixed set of commands the shell understands.

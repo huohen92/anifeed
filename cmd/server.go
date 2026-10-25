@@ -7,9 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/huohen92/anifeed/request"
+	"github.com/huohen92/anifeed/webui"
 	"github.com/spf13/cobra"
-	"github.com/zhifengle/anifeed/request"
-	"github.com/zhifengle/anifeed/webui"
 )
 
 var (

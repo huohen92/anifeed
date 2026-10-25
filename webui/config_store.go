@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zhifengle/anifeed/config"
+	"github.com/huohen92/anifeed/config"
 )
 
 // EditableAuth is the [auth] section exposed to the UI.

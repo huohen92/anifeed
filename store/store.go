@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/huohen92/anifeed/rsssite"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/zhifengle/anifeed/rsssite"
 )
 
 type Store struct {

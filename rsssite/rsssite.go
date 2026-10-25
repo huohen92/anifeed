@@ -9,8 +9,8 @@ import (
 
 	"github.com/dlclark/regexp2"
 
+	"github.com/huohen92/anifeed/request"
 	"github.com/mmcdole/gofeed"
-	"github.com/zhifengle/anifeed/request"
 )
 
 var x5EpisodePattern = regexp.MustCompile(`(?:^|[^\d])\d{1,4}\.5(?:[^\d]|$)`)

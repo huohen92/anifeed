@@ -18,10 +18,10 @@ import (
 	"time"
 
 	"github.com/deadblue/elevengo"
-	"github.com/zhifengle/anifeed/config"
-	"github.com/zhifengle/anifeed/p115"
-	"github.com/zhifengle/anifeed/request"
-	"github.com/zhifengle/anifeed/version"
+	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/p115"
+	"github.com/huohen92/anifeed/request"
+	"github.com/huohen92/anifeed/version"
 )
 
 //go:embed assets

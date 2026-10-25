@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zhifengle/anifeed/config"
-	"github.com/zhifengle/anifeed/p115"
-	"github.com/zhifengle/anifeed/request"
-	"github.com/zhifengle/anifeed/store"
+	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/p115"
+	"github.com/huohen92/anifeed/request"
+	"github.com/huohen92/anifeed/store"
 )
 
 type notifyPayload struct {

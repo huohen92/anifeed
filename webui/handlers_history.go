@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/zhifengle/anifeed/store"
+	"github.com/huohen92/anifeed/store"
 )
 
 type historyItemView struct {

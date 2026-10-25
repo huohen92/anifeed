@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/zhifengle/anifeed/config"
+	"github.com/huohen92/anifeed/config"
 )
 
 type tmdbResult struct {

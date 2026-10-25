@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/huohen92/anifeed/cloudfs"
 	"github.com/spf13/cobra"
-	"github.com/zhifengle/anifeed/cloudfs"
 )
 
 var (

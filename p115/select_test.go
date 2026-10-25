@@ -3,7 +3,7 @@ package p115
 import (
 	"testing"
 
-	"github.com/zhifengle/anifeed/rsssite"
+	"github.com/huohen92/anifeed/rsssite"
 )
 
 func TestSelectEpisodesPrefersBetterVersion(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/zhifengle/anifeed/store"
+	"github.com/huohen92/anifeed/store"
 )
 
 type previewDecision struct {

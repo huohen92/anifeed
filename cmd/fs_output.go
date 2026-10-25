@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/zhifengle/anifeed/cloudfs"
+	"github.com/huohen92/anifeed/cloudfs"
 )
 
 // entryJSON is the JSON-serialisable form of a cloudfs.Entry.

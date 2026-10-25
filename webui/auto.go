@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/zhifengle/anifeed/config"
+	"github.com/huohen92/anifeed/config"
 )
 
 // autoLoop checks the [auto] configuration periodically and triggers scheduled

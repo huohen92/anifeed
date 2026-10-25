@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zhifengle/anifeed/config"
+	"github.com/huohen92/anifeed/config"
 )
 
 type weekdayCacheEntry struct {

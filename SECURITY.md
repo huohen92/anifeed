@@ -7,7 +7,7 @@ Only the latest release receives security fixes.
 ## Reporting a Vulnerability
 
 Please do not open a public issue for security problems. Use GitHub's
-[private vulnerability reporting](https://github.com/zhifengle/anifeed/security/advisories/new)
+[private vulnerability reporting](https://github.com/huohen92/anifeed/security/advisories/new)
 or contact the maintainer privately. Include reproduction steps, affected
 version, and whether the issue requires an authenticated session.
 

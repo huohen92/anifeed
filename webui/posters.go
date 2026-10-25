@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zhifengle/anifeed/config"
+	"github.com/huohen92/anifeed/config"
 )
 
 var posterKeyPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)

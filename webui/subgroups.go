@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/zhifengle/anifeed/config"
-	"github.com/zhifengle/anifeed/p115"
+	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/p115"
 )
 
 // sourceSubgroupName resolves the subtitle-group label configured on the RSS

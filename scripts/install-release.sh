@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 APP_NAME='anifeed'
-REPO='zhifengle/anifeed'
+REPO='huohen92/anifeed'
 BIN_PATH='/usr/local/bin/anifeed'
 DATA_DIR='/var/lib/anifeed'
 CONFIG_FILE="${DATA_DIR}/config.toml"

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/huohen92/anifeed/store"
 	"github.com/rivo/uniseg"
-	"github.com/zhifengle/anifeed/store"
 )
 
 func TestPrintHistoryItemsCompactsAndAlignsMixedWidthText(t *testing.T) {

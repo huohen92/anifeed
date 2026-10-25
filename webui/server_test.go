@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zhifengle/anifeed/config"
-	"github.com/zhifengle/anifeed/rsssite"
-	"github.com/zhifengle/anifeed/store"
+	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/rsssite"
+	"github.com/huohen92/anifeed/store"
 )
 
 func newTestServer(t *testing.T) (*Server, string) {

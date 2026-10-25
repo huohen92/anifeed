@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
-	"github.com/zhifengle/anifeed/rsssite"
+	"github.com/huohen92/anifeed/rsssite"
 )
 
 // ItemKey returns a stable key for preview decisions.

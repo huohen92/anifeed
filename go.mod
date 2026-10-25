@@ -1,4 +1,4 @@
-module github.com/zhifengle/anifeed
+module github.com/huohen92/anifeed
 
 go 1.25.0
 

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/huohen92/anifeed/config"
 	"github.com/mmcdole/gofeed"
-	"github.com/zhifengle/anifeed/config"
 )
 
 func TestDmhy(t *testing.T) {

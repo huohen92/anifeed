@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zhifengle/anifeed/config"
-	"github.com/zhifengle/anifeed/p115"
+	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/p115"
 )
 
 func TestWeComNotificationPayload(t *testing.T) {

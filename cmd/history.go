@@ -7,10 +7,10 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/store"
 	"github.com/rivo/uniseg"
 	"github.com/spf13/cobra"
-	"github.com/zhifengle/anifeed/config"
-	"github.com/zhifengle/anifeed/store"
 )
 
 var (

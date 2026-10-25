@@ -13,7 +13,7 @@ import (
 
 	"github.com/reeflective/readline"
 
-	"github.com/zhifengle/anifeed/cloudfs"
+	"github.com/huohen92/anifeed/cloudfs"
 )
 
 var errNonInteractiveShell = errors.New("fs shell requires an interactive terminal")
@@ -356,4 +356,3 @@ func dispatchShellCommand(ctx context.Context, session *cloudfs.Session, out io.
 func shellError(out io.Writer, err error) {
 	fmt.Fprintf(out, "error: %v\n", err)
 }
-

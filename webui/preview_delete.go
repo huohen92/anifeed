@@ -8,9 +8,9 @@ import (
 
 	"github.com/deadblue/elevengo/option"
 
-	"github.com/zhifengle/anifeed/cloudfs"
-	"github.com/zhifengle/anifeed/p115"
-	"github.com/zhifengle/anifeed/store"
+	"github.com/huohen92/anifeed/cloudfs"
+	"github.com/huohen92/anifeed/p115"
+	"github.com/huohen92/anifeed/store"
 )
 
 type deleteHistoryPayload struct {

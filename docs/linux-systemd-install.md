@@ -5,7 +5,7 @@
 ## 安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zhifengle/anifeed/main/scripts/install-release.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/huohen92/anifeed/main/scripts/install-release.sh | sudo bash
 ```
 
 安装脚本会执行以下操作：
@@ -128,11 +128,11 @@ curl -d '{"tasks":["magnet:?xt=urn:btih:xx"],"cid":"12345","savepath":"文件夹
 卸载服务和二进制，保留配置、cookies 和数据库：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zhifengle/anifeed/main/scripts/install-release.sh | sudo bash -s -- uninstall
+curl -fsSL https://raw.githubusercontent.com/huohen92/anifeed/main/scripts/install-release.sh | sudo bash -s -- uninstall
 ```
 
 同时删除配置、cookies 和数据库：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zhifengle/anifeed/main/scripts/install-release.sh | sudo bash -s -- purge
+curl -fsSL https://raw.githubusercontent.com/huohen92/anifeed/main/scripts/install-release.sh | sudo bash -s -- purge
 ```

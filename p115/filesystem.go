@@ -10,7 +10,7 @@ import (
 	"github.com/deadblue/elevengo"
 	llErrors "github.com/deadblue/elevengo/lowlevel/errors"
 	"github.com/deadblue/elevengo/option"
-	"github.com/zhifengle/anifeed/cloudfs"
+	"github.com/huohen92/anifeed/cloudfs"
 )
 
 // FileSystemOption holds provider-level configuration for FileSystem.

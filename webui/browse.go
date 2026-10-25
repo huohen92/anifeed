@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/zhifengle/anifeed/config"
-	"github.com/zhifengle/anifeed/request"
+	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/request"
 )
 
 var (

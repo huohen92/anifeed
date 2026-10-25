@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/deadblue/elevengo"
-	"github.com/zhifengle/anifeed/p115"
+	"github.com/huohen92/anifeed/p115"
 )
 
 type qrSession struct {

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/zhifengle/anifeed/cmd"
+	"github.com/huohen92/anifeed/cmd"
 )
 
 func main() {

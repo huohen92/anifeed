@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zhifengle/anifeed/rsssite"
+	"github.com/huohen92/anifeed/rsssite"
 )
 
 func TestSuccessfulMagnetItemsPreservesHashAlignment(t *testing.T) {

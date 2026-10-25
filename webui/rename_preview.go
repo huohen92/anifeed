@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/zhifengle/anifeed/config"
-	"github.com/zhifengle/anifeed/p115"
-	"github.com/zhifengle/anifeed/rsssite"
-	"github.com/zhifengle/anifeed/store"
+	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/p115"
+	"github.com/huohen92/anifeed/rsssite"
+	"github.com/huohen92/anifeed/store"
 )
 
 type renamePreviewItem struct {

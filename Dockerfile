@@ -12,7 +12,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go build -trimpath -ldflags "-s -w -X github.com/zhifengle/anifeed/version.Version=${ANIFEED_VERSION}" \
+RUN go build -trimpath -ldflags "-s -w -X github.com/huohen92/anifeed/version.Version=${ANIFEED_VERSION}" \
     -o /out/anifeed .
 
 FROM debian:bookworm-slim

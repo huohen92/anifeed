@@ -5,12 +5,12 @@ import (
 	"log"
 	"os"
 
+	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/p115"
+	"github.com/huohen92/anifeed/request"
+	"github.com/huohen92/anifeed/rsssite"
+	"github.com/huohen92/anifeed/version"
 	"github.com/spf13/cobra"
-	"github.com/zhifengle/anifeed/config"
-	"github.com/zhifengle/anifeed/p115"
-	"github.com/zhifengle/anifeed/request"
-	"github.com/zhifengle/anifeed/rsssite"
-	"github.com/zhifengle/anifeed/version"
 )
 
 var (

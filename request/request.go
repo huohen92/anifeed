@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zhifengle/anifeed/config"
+	"github.com/huohen92/anifeed/config"
 )
 
 var (
