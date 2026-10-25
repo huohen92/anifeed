@@ -1,0 +1,5 @@
+#!/bin/bash
+if [ -n "${TRIM_APPDEST:-}" ]; then
+  pkill -f "${TRIM_APPDEST}/bin/anifeed" 2>/dev/null || true
+fi
+exit 0

@@ -20,3 +20,4 @@ docs/screenshots
 fpk
 dist
 *.fpk
+fpk-native

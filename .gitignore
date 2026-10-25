@@ -33,3 +33,6 @@ db.sqlite
 # fnOS packages
 /dist/
 /*.fpk
+
+# built native binary
+/fpk-native/app/bin/anifeed

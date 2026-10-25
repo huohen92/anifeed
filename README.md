@@ -167,34 +167,55 @@ docker compose up -d --build
 
 ### fnOS FPK 应用
 
-飞牛 fnOS（x86）安装包：
+#### 原生版（推荐）
+
+原生包不需要 Docker，直接运行静态二进制：
 
 ```text
-https://github.com/huohen92/anifeed/releases/download/v0.02/anifeed-0.2.0-x86.fpk
+https://github.com/huohen92/anifeed/releases/download/v0.02/AniFeed-0.2.0-x86-native.fpk
 ```
 
-安装方式：
+安装：
 
 ```text
-fnOS 应用中心 → 手动安装 → 选择 anifeed-0.2.0-x86.fpk
+fnOS 应用中心 → 手动安装 → 选择 AniFeed-0.2.0-x86-native.fpk
 ```
 
 说明：
 
 - 仅支持 x86 设备
-- 需要 fnOS 已安装 Docker
+- 不需要安装 Docker
 - 应用端口：`8115`
-- 数据保存在 fnOS 应用共享目录 `anifeed`
-- 容器镜像：`huohen92/anifeed:0.02`
-- 当前 FPK 使用 Docker 模板，安装时拉取镜像
+- 数据保存在 fnOS 应用共享目录 `anifeed-native`
+- 使用应用专用用户运行，不使用 root
 
-从源码构建 FPK：
+SHA256：
+
+```text
+9fd5f2cbbca7ba81958a535b8174d5c61596e886db724999ed4916c8301e26e6
+```
+
+从源码构建：
 
 ```bash
-# 安装 fnpack 1.2.3 后
-./scripts/build-fpk.sh
-# 输出：dist/anifeed-0.2.0-x86.fpk
+# 需要 fnpack 和 musl-gcc
+./scripts/build-fpk-native.sh
+# 输出：dist/AniFeed-0.2.0-x86-native.fpk
 ```
+
+FPK 源文件位于 [`fpk-native/`](./fpk-native)。
+
+#### Docker 版（备选）
+
+```text
+https://github.com/huohen92/anifeed/releases/download/v0.02/anifeed-0.2.0-x86.fpk
+```
+
+适合希望使用容器隔离，或已经在 fnOS 上启用 Docker 的用户。
+
+- 需要 fnOS 已安装 Docker
+- 容器镜像：`huohen92/anifeed:0.02`
+- 应用端口：`8115`
 
 FPK 源文件位于 [`fpk/`](./fpk)。
 

@@ -1,0 +1,92 @@
+#!/bin/bash
+
+APP_BIN="${TRIM_APPDEST}/bin/anifeed"
+DATA_DIR="${TRIM_DATA_SHARE_PATHS%%:*}"
+[ -n "$DATA_DIR" ] || DATA_DIR="${TRIM_PKGVAR}"
+LOG_FILE="${DATA_DIR}/anifeed.log"
+PID_FILE="${DATA_DIR}/anifeed.pid"
+PORT="${TRIM_SERVICE_PORT:-8115}"
+
+mkdir -p "$DATA_DIR"
+
+log_msg() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
+}
+
+check_process() {
+  local pid="$1"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+status() {
+  if [ -f "$PID_FILE" ]; then
+    local pid
+    pid=$(head -n 1 "$PID_FILE" | tr -d '[:space:]')
+    if check_process "$pid"; then
+      return 0
+    fi
+    rm -f "$PID_FILE"
+  fi
+  return 1
+}
+
+start_process() {
+  if status; then
+    return 0
+  fi
+  if [ ! -x "$APP_BIN" ]; then
+    log_msg "binary not found: $APP_BIN"
+    return 1
+  fi
+  log_msg "starting AniFeed on port ${PORT}"
+  cd "$DATA_DIR" || return 1
+  "$APP_BIN" server --host 0.0.0.0 --port "$PORT" >> "$LOG_FILE" 2>&1 &
+  echo "$!" > "$PID_FILE"
+  sleep 1
+  if ! status; then
+    log_msg "start failed; see $LOG_FILE"
+    return 1
+  fi
+  return 0
+}
+
+stop_process() {
+  if [ ! -f "$PID_FILE" ]; then
+    return 0
+  fi
+  local pid
+  pid=$(head -n 1 "$PID_FILE" | tr -d '[:space:]')
+  if check_process "$pid"; then
+    log_msg "stopping pid ${pid}"
+    kill -TERM "$pid" 2>/dev/null
+    local count=0
+    while check_process "$pid" && [ "$count" -lt 10 ]; do
+      sleep 1
+      count=$((count + 1))
+    done
+    if check_process "$pid"; then
+      kill -KILL "$pid" 2>/dev/null
+    fi
+  fi
+  rm -f "$PID_FILE"
+  return 0
+}
+
+case "$1" in
+start)
+  start_process
+  ;;
+stop)
+  stop_process
+  ;;
+status)
+  if status; then
+    exit 0
+  fi
+  exit 3
+  ;;
+*)
+  echo "Unknown command: $1" > "${TRIM_TEMP_LOGFILE:-/tmp/anifeed-fpk.log}"
+  exit 1
+  ;;
+esac
