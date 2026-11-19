@@ -127,6 +127,7 @@ BGM: \${bgmUrl}
 BGM集标题: \${bgmEpisodeTitle}`;
 
 const PAGE_META = {
+  guangya: { title: '光鸭离线', subtitle: '光鸭下载并转存到 115' },
   dashboard: { title: '概览', subtitle: '', icon: 'dashboard' },
   feeds: { title: '订阅管理', subtitle: '', icon: 'rss' },
   tasks: { title: '离线任务', subtitle: '', icon: 'tasks' },
@@ -507,6 +508,7 @@ function renderRoute() {
     case 'dashboard': loadDashboard(); break;
     case 'feeds': loadFeedsPage(); break;
     case 'tasks': loadTasksPage(); break;
+    case 'guangya': loadGuangyaPage(); break;
     case 'history': loadHistoryPage(); break;
     case 'logs': loadLogsPage(); break;
     case 'settings': loadSettingsPage(); break;
@@ -3051,6 +3053,10 @@ function renderJob(job, root) {
 /* ================================================================
  * Tasks
  * ================================================================ */
+function loadGuangyaPage() {
+  $('#view').innerHTML = `<div class="card" style="padding:0;overflow:hidden;min-height:calc(100vh - 180px)"><iframe src="/guangya/" title="光鸭离线" style="display:block;width:100%;height:calc(100vh - 180px);border:0;background:#f6f8fc"></iframe></div>`;
+}
+
 async function loadTasksPage() {
   $('#view').innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取 115 离线任务…</span></div>`;
   try {
@@ -3850,6 +3856,7 @@ function renderSettingsPage() {
             <div class="kv-row"><span>订阅数量</span><code>${state.status ? state.status.feed_count : '—'}</code></div>
             <div class="kv-row"><span>登录状态</span><code>${esc(loginStateText)}</code></div>
             <div class="kv-row"><span>自动运行</span><code>${(cfg.auto || {}).enabled ? `每 ${Number((cfg.auto || {}).interval_minutes || 30)} 分钟` : '未开启'}</code></div>
+            <div class="kv-row"><span>GitHub</span><a href="https://github.com/huohen92/anifeed" target="_blank" rel="noopener noreferrer">huohen92/anifeed</a></div>
           </div>
         </div>
       </section>

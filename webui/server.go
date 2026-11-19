@@ -19,6 +19,7 @@ import (
 
 	"github.com/deadblue/elevengo"
 	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/guangya"
 	"github.com/huohen92/anifeed/p115"
 	"github.com/huohen92/anifeed/request"
 	"github.com/huohen92/anifeed/version"
@@ -79,6 +80,7 @@ type Server struct {
 	logMu         sync.Mutex
 	jobs          *jobManager
 	postProcessMu sync.Mutex
+	guangya       *guangya.Bridge
 	startedAt     time.Time
 	httpSrv       *http.Server
 	versionText   string
@@ -94,7 +96,7 @@ func New(cfg *config.Config, source *config.ConfigSource) *Server {
 		path = config.DefaultConfigPath()
 	}
 	_, err := os.Stat(path)
-	return &Server{
+	s := &Server{
 		cfg:             cfg,
 		source:          source,
 		configPath:      path,
@@ -110,6 +112,10 @@ func New(cfg *config.Config, source *config.ConfigSource) *Server {
 		startedAt:       time.Now(),
 		versionText:     version.Version,
 	}
+	if cfg != nil {
+		s.guangya = guangya.New(filepath.Join(filepath.Dir(path), ".runtime", "guangya"), cfg.Auth.Cookies, cfg.Offline.DefaultCid)
+	}
+	return s
 }
 
 // ConfigPath returns the config.toml path managed by the UI.
@@ -170,6 +176,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/session/logout", s.handleAuthLogout)
 	mux.HandleFunc("POST /add", s.handleLegacyAdd)
 
+	if s.guangya != nil {
+		mux.Handle("/guangya/", http.StripPrefix("/guangya", s.guangya.Handler()))
+		mux.HandleFunc("/guangya", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/guangya/", http.StatusTemporaryRedirect)
+		})
+	}
 	mux.Handle("/", staticHandler())
 	return s.withSecurity(s.withAuth(mux))
 }
@@ -206,6 +218,9 @@ func (s *Server) Start(ctx context.Context) error {
 	log.Printf("AniFeed Web UI 已启动: http://%s", displayURL(host, port))
 	if s.hasCookies() {
 		s.refreshLogin(false)
+	}
+	if s.guangya != nil {
+		s.guangya.StartPoll()
 	}
 	go s.autoLoop(ctx)
 	go s.startPostProcessLoop(ctx)
