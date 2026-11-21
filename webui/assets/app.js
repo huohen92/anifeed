@@ -3966,9 +3966,8 @@ function renderSettingsPage() {
       <section class="card">
         <div class="section-title"><span class="ico">${icon('refresh')}</span><div><h3>自动备用字幕组</h3><p>配合摸鱼提醒自动补充字幕组</p></div></div>
         <div class="section-body">
-          <label class="field span-2"><span>自动添加备用字幕组</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-backup" ${(cfg.lab || {}).auto_backup_subgroup ? 'checked' : ''}><span></span></span><span>115 连续下载失败后，自动补充有缺失集数的备用字幕组 RSS</span></span></label>
-          <label class="field"><span>连续失败触发次数</span><input class="input" id="set-lab-auto-backup-failures" type="number" min="1" max="20" value="${Number((cfg.lab || {}).auto_backup_failures || 2)}"><span class="hint">115 失败任务被监控到该次数后触发检查。</span></label>
-          <div class="field-row"><button class="btn btn-sm" id="auto-backup-now" type="button">${icon('refresh')}立即检查备用字幕组</button><span class="hint">检查缺失集数并匹配喜好字幕组，结果写入运行日志。</span></div>
+          <label class="field span-2"><span>自动添加备用字幕组</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-backup" ${(cfg.lab || {}).auto_backup_subgroup ? 'checked' : ''}><span></span></span><span>主 RSS 连续多次添加失败后，自动补充有缺失集数的备用字幕组 RSS</span></span></label>
+          <label class="field"><span>主 RSS 连续添加失败次数</span><input class="input" id="set-lab-auto-backup-failures" type="number" min="1" max="20" value="${Number((cfg.lab || {}).auto_backup_failures || 2)}"><span class="hint">115 失败任务被监控到该次数后触发检查。</span></label>
           <label class="field span-2"><span>自动应用规则</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-apply" ${(cfg.lab || {}).auto_apply_rules ? 'checked' : ''}><span></span></span><span>自动添加的备用字幕组使用自动应用最佳规则</span></span></label>
           <label class="field span-2"><span>显示表单提示</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-hide-hints" ${!(cfg.lab || {}).hide_hints ? 'checked' : ''}><span></span></span><span>关闭后隐藏字段下方说明文字；? / ! 帮助入口仍然保留</span></span></label>
           <div class="notice">${icon('info')}<span>以上为实验性选项，先保存配置；完整执行逻辑会在后续版本接入。</span></div>
@@ -4032,12 +4031,7 @@ function renderSettingsPage() {
     $('#qr-login').addEventListener('click', openQrModal);
     $('#logout-btn').addEventListener('click', logout);
     $('#notify-test').addEventListener('click', testNotification);
-    $('#auto-backup-now')?.addEventListener('click', async () => {
-      const btn = $('#auto-backup-now'); btn.disabled = true;
-      try { await api('/api/lab/auto-backup', { method: 'POST', body: {} }); toast('已开始检查，稍后查看运行日志', 'success'); }
-      catch (e) { toast(e.message, 'error', 5000); }
-      finally { btn.disabled = false; }
-    });
+
     $('#qb-test')?.addEventListener('click', async () => {
       const btn = $('#qb-test'); btn.disabled = true; btn.textContent = '连接中…';
       try { const r = await api('/api/downloaders/qb/test', { method: 'POST', body: {} }); toast('qBittorrent 已连接：' + (r.version || 'OK'), 'success'); }

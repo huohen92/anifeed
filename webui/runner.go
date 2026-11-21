@@ -91,6 +91,7 @@ func (s *Server) afterRun(kind string, ag *p115.Agent, results []p115.FeedRunRes
 		}
 	}
 	if kind == "auto" || kind == "all" {
+		s.recordAutoBackupFailures(cfg, results)
 		go s.checkIdleFeeds(cfg)
 	}
 }

@@ -2,7 +2,6 @@ package webui
 
 import (
 	"log"
-	"net/http"
 	"strings"
 
 	"github.com/huohen92/anifeed/config"
@@ -10,9 +9,61 @@ import (
 	"github.com/huohen92/anifeed/store"
 )
 
+// recordAutoBackupFailures counts consecutive main-RSS add failures from an
+// automatic run and schedules backup discovery for the affected feed.
+func (s *Server) recordAutoBackupFailures(cfg *config.Config, results []p115.FeedRunResult) {
+	if cfg == nil || !cfg.Lab.AutoBackupSubgroup {
+		return
+	}
+	byURL := make(map[string]p115.FeedRunResult, len(results))
+	for _, result := range results {
+		byURL[strings.TrimSpace(result.URL)] = result
+	}
+	threshold := cfg.Lab.AutoBackupFailures
+	if threshold <= 0 {
+		threshold = 2
+	}
+	for _, feeds := range cfg.RSS {
+		for _, feed := range feeds {
+			if !feed.IsEnabled() {
+				continue
+			}
+			result, ok := byURL[strings.TrimSpace(feed.Url)]
+			if !ok {
+				continue
+			}
+			addFailed := strings.Contains(strings.ToLower(result.Error), "add offline task")
+			s.backupMu.Lock()
+			if s.backupFailures == nil {
+				s.backupFailures = map[string]int{}
+				s.backupTriggered = map[string]bool{}
+			}
+			if addFailed {
+				s.backupFailures[feed.Url]++
+				count := s.backupFailures[feed.Url]
+				trigger := count >= threshold && !s.backupTriggered[feed.Url]
+				if trigger {
+					s.backupTriggered[feed.Url] = true
+				}
+				s.backupMu.Unlock()
+				log.Printf("[auto-backup] 主 RSS 连续添加失败 %d/%d: %s", count, threshold, feed.Name)
+				if trigger {
+					go s.autoBackupSubgroups(cfg, feed.Url)
+				}
+			} else if result.Error == "" {
+				s.backupFailures[feed.Url] = 0
+				s.backupTriggered[feed.Url] = false
+				s.backupMu.Unlock()
+			} else {
+				s.backupMu.Unlock()
+			}
+		}
+	}
+}
+
 // autoBackupSubgroups adds a preferred backup RSS when the main feed is missing
 // episodes and that subgroup already has one of those episodes.
-func (s *Server) autoBackupSubgroups(cfg *config.Config) {
+func (s *Server) autoBackupSubgroups(cfg *config.Config, onlyURL string) {
 	if cfg == nil || !cfg.Lab.AutoBackupSubgroup {
 		return
 	}
@@ -25,7 +76,7 @@ func (s *Server) autoBackupSubgroups(cfg *config.Config) {
 	for site, feeds := range cfg.RSS {
 		for i := range feeds {
 			feed := &feeds[i]
-			if !feed.IsEnabled() || feed.TotalEpisodes <= 0 {
+			if (onlyURL != "" && feed.Url != onlyURL) || !feed.IsEnabled() || feed.TotalEpisodes <= 0 {
 				continue
 			}
 			source := config.NormalizeSource(feed.Source, feed.Url)
@@ -156,17 +207,3 @@ func preferredBackupGroup(preferred []string, name string) bool {
 }
 
 func ptrBool(v bool) *bool { return &v }
-
-func (s *Server) handleAutoBackupNow(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeAPIError(w, http.StatusMethodNotAllowed, "仅支持 POST")
-		return
-	}
-	cfg := s.configSnapshot()
-	if cfg == nil || !cfg.Lab.AutoBackupSubgroup {
-		writeAPIError(w, http.StatusBadRequest, "请先在设置中开启自动备用字幕组")
-		return
-	}
-	go s.autoBackupSubgroups(cfg)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}

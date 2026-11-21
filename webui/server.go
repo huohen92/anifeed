@@ -72,16 +72,19 @@ type Server struct {
 	lastScheduledWash    time.Time
 	washScheduledRunning bool
 
-	logBuf        *LogBuffer
-	prevLog       io.Writer
-	authMu        sync.Mutex
-	authSessions  map[string]authSession
-	logMu         sync.Mutex
-	jobs          *jobManager
-	postProcessMu sync.Mutex
-	startedAt     time.Time
-	httpSrv       *http.Server
-	versionText   string
+	logBuf          *LogBuffer
+	prevLog         io.Writer
+	authMu          sync.Mutex
+	authSessions    map[string]authSession
+	logMu           sync.Mutex
+	jobs            *jobManager
+	postProcessMu   sync.Mutex
+	backupMu        sync.Mutex
+	backupFailures  map[string]int
+	backupTriggered map[string]bool
+	startedAt       time.Time
+	httpSrv         *http.Server
+	versionText     string
 }
 
 // New creates a Web UI server from a loaded configuration.
@@ -172,7 +175,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /add", s.handleLegacyAdd)
 
 	mux.HandleFunc("/api/downloaders/qb/test", s.handleQBTest)
-	mux.HandleFunc("/api/lab/auto-backup", s.handleAutoBackupNow)
 
 	mux.Handle("/", staticHandler())
 	return s.withSecurity(s.withAuth(mux))
