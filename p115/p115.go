@@ -308,6 +308,7 @@ func (ag *Agent) RunRssConfigGroup(config *rsssite.RssConfig) []FeedRunResult {
 		copy.Subgroups = nil
 		copy.Filter = subgroup.Filter
 		copy.Exclude = subgroup.Exclude
+		copy.StartEpisode = subgroup.StartEpisode
 		if subgroup.Season > 0 {
 			copy.RenameSeason = subgroup.Season
 		}
@@ -348,6 +349,17 @@ func (ag *Agent) runRssConfig(config *rsssite.RssConfig, skipEpisodes map[int]bo
 		return result
 	}
 	result.Total = total
+	if config.StartEpisode > 0 {
+		kept := make([]rsssite.MagnetItem, 0, len(magnetItems))
+		for _, item := range magnetItems {
+			episode, epErr := ExtractEpisode(item.Title)
+			if epErr == nil && episode > 0 && int(episode) < config.StartEpisode {
+				continue
+			}
+			kept = append(kept, item)
+		}
+		magnetItems = kept
+	}
 	result.Matched = len(magnetItems)
 	decisions, _ := ag.StoreInstance.PreviewDecisions(config.Url)
 

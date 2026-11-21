@@ -19,7 +19,6 @@ import (
 
 	"github.com/deadblue/elevengo"
 	"github.com/huohen92/anifeed/config"
-	"github.com/huohen92/anifeed/guangya"
 	"github.com/huohen92/anifeed/p115"
 	"github.com/huohen92/anifeed/request"
 	"github.com/huohen92/anifeed/version"
@@ -80,7 +79,6 @@ type Server struct {
 	logMu         sync.Mutex
 	jobs          *jobManager
 	postProcessMu sync.Mutex
-	guangya       *guangya.Bridge
 	startedAt     time.Time
 	httpSrv       *http.Server
 	versionText   string
@@ -111,9 +109,6 @@ func New(cfg *config.Config, source *config.ConfigSource) *Server {
 		authSessions:    make(map[string]authSession),
 		startedAt:       time.Now(),
 		versionText:     version.Version,
-	}
-	if cfg != nil {
-		s.guangya = guangya.New(filepath.Join(filepath.Dir(path), ".runtime", "guangya"), cfg.Auth.Cookies, cfg.Offline.DefaultCid)
 	}
 	return s
 }
@@ -176,12 +171,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/session/logout", s.handleAuthLogout)
 	mux.HandleFunc("POST /add", s.handleLegacyAdd)
 
-	if s.guangya != nil {
-		mux.Handle("/guangya/", http.StripPrefix("/guangya", s.guangya.Handler()))
-		mux.HandleFunc("/guangya", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "/guangya/", http.StatusTemporaryRedirect)
-		})
-	}
+	mux.HandleFunc("/api/downloaders/qb/test", s.handleQBTest)
+	mux.HandleFunc("/api/lab/auto-backup", s.handleAutoBackupNow)
+
 	mux.Handle("/", staticHandler())
 	return s.withSecurity(s.withAuth(mux))
 }
@@ -218,9 +210,6 @@ func (s *Server) Start(ctx context.Context) error {
 	log.Printf("AniFeed Web UI 已启动: http://%s", displayURL(host, port))
 	if s.hasCookies() {
 		s.refreshLogin(false)
-	}
-	if s.guangya != nil {
-		s.guangya.StartPoll()
 	}
 	go s.autoLoop(ctx)
 	go s.startPostProcessLoop(ctx)
@@ -455,11 +444,11 @@ func (s *Server) accessToken() string {
 func (s *Server) withSecurity(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; img-src 'self' data: https: http:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'")
+			"default-src 'self'; img-src 'self' data: https: http:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'")
 
 		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodDelete {
 			if origin := r.Header.Get("Origin"); origin != "" && r.Header.Get("Sec-Fetch-Site") != "same-origin" {

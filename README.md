@@ -52,14 +52,14 @@ Rust 版本 [rss2pan](https://github.com/zhifengle/rss2pan) 使用的 Web API �
 # 编译
 go build -o anifeed .
 
-# 启动 Web UI（监听 0.0.0.0:8115，本机访问 http://127.0.0.1:8115）
+# 启动 Web UI（监听 0.0.0.0:80，本机访问 http://127.0.0.1:80）
 ./anifeed server
 
 # 或者使用别名
 ./anifeed web
 
 # 指定监听地址和端口
-./anifeed server --host 0.0.0.0 --port 8115
+./anifeed server --host 0.0.0.0 --port 80
 ```
 
 首次启动时如果当前目录没有 `config.toml`，打开页面后在「设置」中填写 115 Cookies（或扫码登录）并保存，程序会自动生成 `config.toml`。旧的 `rss.json`、`node-site-config.json`、`.cookies` 会被读取并在首次保存时迁移，原文件不会被删除。
@@ -69,7 +69,7 @@ go build -o anifeed .
 镜像：
 
 ```text
-huohen92/anifeed:0.02
+huohen92/anifeed:0.03
 huohen92/anifeed:latest
 ```
 
@@ -84,23 +84,23 @@ https://hub.docker.com/r/huohen92/anifeed
 #### 直接拉取运行
 
 ```bash
-docker pull huohen92/anifeed:0.02
+docker pull huohen92/anifeed:0.03
 
 mkdir -p data
 
 docker run -d \
   --name anifeed \
   --restart unless-stopped \
-  -p 8115:8115 \
+  -p 80:80 \
   -v "$PWD/data:/data" \
   -e TZ=Asia/Shanghai \
-  huohen92/anifeed:0.02
+  huohen92/anifeed:0.03
 ```
 
 打开：
 
 ```text
-http://服务器IP:8115
+http://服务器IP:80
 ```
 
 首次打开后创建 Web UI 登录账号，然后在「设置 → 115 账号」填写 Cookies 或扫码登录。
@@ -134,11 +134,11 @@ data/db.sqlite
 ```yaml
 services:
   anifeed:
-    image: huohen92/anifeed:0.02
+    image: huohen92/anifeed:0.03
     container_name: anifeed
     restart: unless-stopped
     ports:
-      - "8115:8115"
+      - "80:80"
     volumes:
       - ./data:/data
     environment:
@@ -172,20 +172,20 @@ docker compose up -d --build
 原生包不需要 Docker，直接运行静态二进制：
 
 ```text
-https://github.com/huohen92/anifeed/releases/download/v0.02/AniFeed-0.2.0-x86-native.fpk
+https://github.com/huohen92/anifeed/releases/download/v0.03/AniFeed-0.3.0-x86-native.fpk
 ```
 
 安装：
 
 ```text
-fnOS 应用中心 → 手动安装 → 选择 AniFeed-0.2.0-x86-native.fpk
+fnOS 应用中心 → 手动安装 → 选择 AniFeed-0.3.0-x86-native.fpk
 ```
 
 说明：
 
 - 仅支持 x86 设备
 - 不需要安装 Docker
-- 应用端口：`8115`
+- 应用端口：`80`
 - 数据保存在 fnOS 应用共享目录 `anifeed-native`
 - 使用应用专用用户运行，不使用 root
 
@@ -200,7 +200,7 @@ SHA256：
 ```bash
 # 需要 fnpack 和 musl-gcc
 ./scripts/build-fpk-native.sh
-# 输出：dist/AniFeed-0.2.0-x86-native.fpk
+# 输出：dist/AniFeed-0.3.0-x86-native.fpk
 ```
 
 FPK 源文件位于 [`fpk-native/`](./fpk-native)。
@@ -208,14 +208,14 @@ FPK 源文件位于 [`fpk-native/`](./fpk-native)。
 #### Docker 版（备选）
 
 ```text
-https://github.com/huohen92/anifeed/releases/download/v0.02/anifeed-0.2.0-x86.fpk
+https://github.com/huohen92/anifeed/releases/download/v0.03/anifeed-0.3.0-x86.fpk
 ```
 
 适合希望使用容器隔离，或已经在 fnOS 上启用 Docker 的用户。
 
 - 需要 fnOS 已安装 Docker
-- 容器镜像：`huohen92/anifeed:0.02`
-- 应用端口：`8115`
+- 容器镜像：`huohen92/anifeed:0.03`
+- 应用端口：`80`
 
 FPK 源文件位于 [`fpk/`](./fpk)。
 
@@ -540,14 +540,14 @@ anifeed server -h
 # 运行服务（同时提供 Web UI、JSON API 和 /add）
 anifeed server
 # 只在指定地址监听
-anifeed server --host 127.0.0.1 --port 8115
+anifeed server --host 127.0.0.1 --port 80
 # 添加任务（兼容旧接口）
-curl -d '{"tasks": ["magnet:?xt=urn:btih:xx"], "cid":"12345", "savepath":"文件夹名称"}' -X POST http://localhost:8115/add
+curl -d '{"tasks": ["magnet:?xt=urn:btih:xx"], "cid":"12345", "savepath":"文件夹名称"}' -X POST http://localhost:80/add
 ```
 
-浏览器打开 `http://localhost:8115` 即可使用 Web UI。如果配置了 `[server].access_token`，请求需要带上 `X-Access-Token` 请求头。
+浏览器打开 `http://localhost:80` 即可使用 Web UI。如果配置了 `[server].access_token`，请求需要带上 `X-Access-Token` 请求头。
 
-POST `http://localhost:8115/add`
+POST `http://localhost:80/add`
 
 body 示例：
 

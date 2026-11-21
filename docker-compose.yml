@@ -5,11 +5,11 @@ services:
       args:
         # 国内网络可改为 https://goproxy.cn,direct
         GOPROXY: https://proxy.golang.org,direct
-    image: huohen92/anifeed:0.02
+    image: huohen92/anifeed:0.03
     container_name: anifeed
     restart: unless-stopped
     ports:
-      - "8115:8115"
+      - "80:8115"
     volumes:
       - ./data:/data
     environment:

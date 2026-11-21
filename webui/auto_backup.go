@@ -1,0 +1,172 @@
+package webui
+
+import (
+	"log"
+	"net/http"
+	"strings"
+
+	"github.com/huohen92/anifeed/config"
+	"github.com/huohen92/anifeed/p115"
+	"github.com/huohen92/anifeed/store"
+)
+
+// autoBackupSubgroups adds a preferred backup RSS when the main feed is missing
+// episodes and that subgroup already has one of those episodes.
+func (s *Server) autoBackupSubgroups(cfg *config.Config) {
+	if cfg == nil || !cfg.Lab.AutoBackupSubgroup {
+		return
+	}
+	st, err := store.NewWithPath(s.databasePath())
+	if err != nil {
+		return
+	}
+	defer st.Close()
+	changed := false
+	for site, feeds := range cfg.RSS {
+		for i := range feeds {
+			feed := &feeds[i]
+			if !feed.IsEnabled() || feed.TotalEpisodes <= 0 {
+				continue
+			}
+			source := config.NormalizeSource(feed.Source, feed.Url)
+			sourceID := feedSourceID(source, feed.Url)
+			if sourceID == "" || (source != config.SourceAniBT && source != config.SourceMikan) {
+				continue
+			}
+			history, err := st.ListHistory(2000, feed.Name)
+			if err != nil {
+				continue
+			}
+			have := map[int]bool{}
+			for _, item := range history {
+				if episode, epErr := p115.ExtractEpisode(item.Title); epErr == nil && episode > 0 {
+					have[int(episode)] = true
+				}
+			}
+			missing := map[int]bool{}
+			startEpisode := 0
+			for episode := 1; episode <= feed.TotalEpisodes; episode++ {
+				if !have[episode] {
+					missing[episode] = true
+					if startEpisode == 0 {
+						startEpisode = episode
+					}
+				}
+			}
+			if len(missing) == 0 {
+				continue
+			}
+			var groups *browseGroupsResponse
+			if source == config.SourceAniBT {
+				groups, err = s.browseAniBTGroups(sourceID)
+			} else {
+				groups, err = s.browseMikanGroups(sourceID)
+			}
+			if err != nil || groups == nil {
+				continue
+			}
+			existing := map[string]bool{strings.TrimSpace(feed.Url): true}
+			existingNames := map[string]bool{}
+			for _, group := range feed.Subgroups {
+				existing[strings.TrimSpace(group.URL)] = true
+				existingNames[strings.ToLower(strings.TrimSpace(group.Name))] = true
+			}
+			if feed.SubgroupName != "" {
+				existingNames[strings.ToLower(strings.TrimSpace(feed.SubgroupName))] = true
+			}
+			var additions []config.RssSubgroup
+			for _, group := range groups.Groups {
+				if strings.TrimSpace(group.RSS) == "" || existing[group.RSS] || existingNames[strings.ToLower(strings.TrimSpace(group.Name))] {
+					continue
+				}
+				if !preferredBackupGroup(cfg.Lab.PreferredSubgroups, group.Name) {
+					continue
+				}
+				for _, item := range group.Items {
+					episode, epErr := p115.ExtractEpisode(item.Title)
+					if epErr != nil || episode <= 0 || !missing[int(episode)] {
+						continue
+					}
+					additions = append(additions, config.RssSubgroup{
+						Name: group.Name, URL: group.RSS, Enabled: ptrBool(true),
+						Filter: "", Exclude: "",
+						StartEpisode: startEpisode,
+						Season:       feed.RenameSeason, Offset: feed.RenameOffset,
+					})
+					break
+				}
+			}
+			if len(additions) == 0 {
+				continue
+			}
+			feed.Subgroups = append(feed.Subgroups, additions...)
+			cfg.RSS[site] = feeds
+			changed = true
+			log.Printf("[auto-backup] %s 添加 %d 个备用字幕组", feed.Name, len(additions))
+		}
+	}
+	if !changed {
+		return
+	}
+	resp, err := s.loadEditable()
+	if err != nil {
+		return
+	}
+	byURL := map[string]config.RssConfig{}
+	for _, feeds := range cfg.RSS {
+		for _, feed := range feeds {
+			byURL[feed.Url] = feed
+		}
+	}
+	for i := range resp.Config.RSS {
+		if feed, ok := byURL[resp.Config.RSS[i].URL]; ok {
+			for _, group := range feed.Subgroups {
+				found := false
+				for _, existing := range resp.Config.RSS[i].Subgroups {
+					if existing.URL == group.URL {
+						found = true
+						break
+					}
+				}
+				if !found {
+					resp.Config.RSS[i].Subgroups = append(resp.Config.RSS[i].Subgroups, EditableSubgroup{
+						Name: group.Name, URL: group.URL, Enabled: func() bool { return group.Enabled == nil || *group.Enabled }(),
+						Filter: group.Filter, Exclude: group.Exclude, StartEpisode: group.StartEpisode, Season: group.Season, Offset: group.Offset,
+					})
+				}
+			}
+		}
+	}
+	if _, err := s.saveEditable(&resp.Config); err != nil {
+		log.Printf("[auto-backup] 保存备用字幕组失败: %v", err)
+	}
+}
+
+func preferredBackupGroup(preferred []string, name string) bool {
+	if len(preferred) == 0 {
+		return true
+	}
+	lower := strings.ToLower(name)
+	for _, group := range preferred {
+		if strings.Contains(lower, strings.ToLower(strings.TrimSpace(group))) {
+			return true
+		}
+	}
+	return false
+}
+
+func ptrBool(v bool) *bool { return &v }
+
+func (s *Server) handleAutoBackupNow(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPIError(w, http.StatusMethodNotAllowed, "仅支持 POST")
+		return
+	}
+	cfg := s.configSnapshot()
+	if cfg == nil || !cfg.Lab.AutoBackupSubgroup {
+		writeAPIError(w, http.StatusBadRequest, "请先在设置中开启自动备用字幕组")
+		return
+	}
+	go s.autoBackupSubgroups(cfg)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}

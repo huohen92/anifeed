@@ -134,6 +134,22 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 	writeKV(&b, "auto_rules", strconv.FormatBool(cfg.Offline.AutoRules))
 	b.WriteString("\n")
 
+	// [downloader.primary_115]
+	b.WriteString("[downloader.primary_115]\n")
+	writeKV(&b, "enabled", "true")
+	writeKV(&b, "offline_cid", quote(cfg.Downloader.Primary115.OfflineCid))
+	writeKV(&b, "save_path", quote(cfg.Downloader.Primary115.SavePath))
+
+	b.WriteString("\n[downloader.qbittorrent]\n")
+	writeKV(&b, "enabled", strconv.FormatBool(cfg.Downloader.QBittorrent.Enabled))
+	writeKV(&b, "url", quote(cfg.Downloader.QBittorrent.URL))
+	writeKV(&b, "username", quote(cfg.Downloader.QBittorrent.Username))
+	writeKV(&b, "password", quote(cfg.Downloader.QBittorrent.Password))
+	writeKV(&b, "save_path", quote(cfg.Downloader.QBittorrent.SavePath))
+	writeKV(&b, "category", quote(cfg.Downloader.QBittorrent.Category))
+	writeKV(&b, "fallback_threshold", strconv.Itoa(cfg.Downloader.QBittorrent.FallbackThreshold))
+	b.WriteString("\n")
+
 	// [rename]
 	b.WriteString("[rename]\n")
 	writeKV(&b, "enabled", strconv.FormatBool(cfg.Rename.Enabled))
@@ -242,6 +258,11 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 	b.WriteString(stringArray(cfg.Lab.InactiveSubgroups))
 	b.WriteString("\n")
 	writeKV(&b, "auto_backup_subgroup", strconv.FormatBool(cfg.Lab.AutoBackupSubgroup))
+	failures := cfg.Lab.AutoBackupFailures
+	if failures <= 0 {
+		failures = 2
+	}
+	writeKV(&b, "auto_backup_failures", strconv.Itoa(failures))
 	writeKV(&b, "auto_apply_rules", strconv.FormatBool(cfg.Lab.AutoApplyRules))
 	b.WriteString("\n")
 
@@ -312,7 +333,7 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 				if group.Enabled != nil {
 					enabled = *group.Enabled
 				}
-				b.WriteString(fmt.Sprintf("{name=%s,url=%s,season=%d,offset=%d,filter=%s,exclude=%s,enabled=%t}", quote(group.Name), quote(group.URL), group.Season, group.Offset, quote(group.Filter), quote(group.Exclude), enabled))
+				b.WriteString(fmt.Sprintf("{name=%s,url=%s,season=%d,offset=%d,filter=%s,exclude=%s,start_episode=%d,enabled=%t}", quote(group.Name), quote(group.URL), group.Season, group.Offset, quote(group.Filter), quote(group.Exclude), group.StartEpisode, enabled))
 			}
 			b.WriteString("]\n")
 		}

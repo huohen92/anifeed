@@ -86,10 +86,6 @@ func (s *Server) sendItemNotification(cfg *config.Config, feedName, feedURL, ite
 	if title == "" {
 		title = itemTitle
 	}
-	tmdbID := strings.TrimSpace(feed.TmdbID)
-	if tmdbID != "" {
-		title = fmt.Sprintf("%s [tmdbid=%s]", title, tmdbID)
-	}
 	season := renameSeasonForFeed(cfg, feed.Name, feed.Url)
 	episode, _ := p115.ExtractEpisode(itemTitle)
 	episodeTitle := s.resolveEpisodeTitle(cfg, &feed, season, int(episode))

@@ -13,6 +13,7 @@ type LabConfig struct {
 	PreferredSubgroups  []string
 	InactiveSubgroups   []string
 	AutoBackupSubgroup  bool
+	AutoBackupFailures  int
 	AutoApplyRules      bool
 	HideHints           bool
 }

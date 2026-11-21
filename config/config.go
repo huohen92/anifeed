@@ -9,13 +9,14 @@ import (
 // RssConfig represents RSS feed configuration (local copy to avoid circular dependency)
 // RssSubgroup is an optional extra RSS source for one subscription.
 type RssSubgroup struct {
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Season  int    `json:"season,omitempty"`
-	Offset  int    `json:"offset,omitempty"`
-	Filter  string `json:"filter,omitempty"`
-	Exclude string `json:"exclude,omitempty"`
-	Enabled *bool  `json:"enabled,omitempty"`
+	Name         string `json:"name"`
+	URL          string `json:"url"`
+	Season       int    `json:"season,omitempty"`
+	Offset       int    `json:"offset,omitempty"`
+	Filter       string `json:"filter,omitempty"`
+	Exclude      string `json:"exclude,omitempty"`
+	StartEpisode int    `json:"start_episode,omitempty"`
+	Enabled      *bool  `json:"enabled,omitempty"`
 }
 
 func (s RssSubgroup) IsEnabled() bool {
@@ -33,6 +34,7 @@ type RssConfig struct {
 	SavePath        string        `json:"savepath,omitempty"`
 	Filter          string        `json:"filter,omitempty"`
 	Exclude         string        `json:"exclude,omitempty"`
+	StartEpisode    int           `json:"start_episode,omitempty"`
 	Expiration      uint          `json:"expiration,omitempty"`
 	RenameSeason    int           `json:"rename_season,omitempty"`
 	RenameOffset    int           `json:"rename_offset,omitempty"`
@@ -82,8 +84,30 @@ type Config struct {
 	Auto         AutoConfig
 	Notify       NotifyConfig
 	Lab          LabConfig
+	Downloaders  DownloadersConfig
 	RSS          map[string][]RssConfig // Keyed by site host
 	Sites        map[string]SiteConfig  // Keyed by site host
+}
+
+// DownloaderConfig describes one offline downloader.
+type DownloaderConfig struct {
+	Enabled           bool
+	OfflineCid        string
+	SavePath          string
+	OfflineParentID   string
+	FallbackThreshold int
+	DailyLimit        int
+	HighSpeedMB       int
+	URL               string
+	Username          string
+	Password          string
+	Category          string
+}
+
+// DownloadersConfig keeps the 115 primary and qBittorrent auxiliary downloaders.
+type DownloadersConfig struct {
+	Primary115  DownloaderConfig
+	QBittorrent DownloaderConfig
 }
 
 // AuthConfig represents authentication configuration
@@ -316,6 +340,32 @@ func Resolve(cli CLIParams, toml *TOMLConfig, tomlPath string, legacy *LegacyCon
 		// [offline]
 		cfg.Offline.DefaultCid = toml.Offline.DefaultCid
 		cfg.Offline.DefaultSavePath = toml.Offline.DefaultSavePath
+		cfg.Downloaders.Primary115 = DownloaderConfig{
+			Enabled: true, OfflineCid: toml.Downloader.Primary115.OfflineCid,
+			SavePath: toml.Downloader.Primary115.SavePath,
+		}
+		if cfg.Downloaders.Primary115.OfflineCid == "" {
+			cfg.Downloaders.Primary115.OfflineCid = cfg.Offline.DefaultCid
+		}
+		if cfg.Downloaders.Primary115.SavePath == "" {
+			cfg.Downloaders.Primary115.SavePath = cfg.Offline.DefaultSavePath
+		}
+		cfg.Offline.DefaultCid = cfg.Downloaders.Primary115.OfflineCid
+		cfg.Offline.DefaultSavePath = cfg.Downloaders.Primary115.SavePath
+
+		cfg.Downloaders.QBittorrent = DownloaderConfig{
+			Enabled:           toml.Downloader.QBittorrent.Enabled,
+			URL:               toml.Downloader.QBittorrent.URL,
+			Username:          toml.Downloader.QBittorrent.Username,
+			Password:          toml.Downloader.QBittorrent.Password,
+			SavePath:          toml.Downloader.QBittorrent.SavePath,
+			Category:          toml.Downloader.QBittorrent.Category,
+			FallbackThreshold: toml.Downloader.QBittorrent.FallbackThreshold,
+		}
+		if cfg.Downloaders.QBittorrent.FallbackThreshold <= 0 {
+			cfg.Downloaders.QBittorrent.FallbackThreshold = 3
+		}
+
 		cfg.Offline.GlobalExclude = append([]string(nil), toml.Offline.GlobalExclude...)
 		cfg.Offline.SkipX5 = toml.Offline.SkipX5
 		cfg.Offline.Retry = toml.Offline.Retry
@@ -413,8 +463,12 @@ func Resolve(cli CLIParams, toml *TOMLConfig, tomlPath string, legacy *LegacyCon
 			PreferredSubgroups: append([]string(nil), toml.Lab.PreferredSubgroups...),
 			InactiveSubgroups:  append([]string(nil), toml.Lab.InactiveSubgroups...),
 			AutoBackupSubgroup: toml.Lab.AutoBackupSubgroup,
+			AutoBackupFailures: toml.Lab.AutoBackupFailures,
 			AutoApplyRules:     toml.Lab.AutoApplyRules,
 			HideHints:          toml.Lab.HideHints,
+		}
+		if cfg.Lab.AutoBackupFailures <= 0 {
+			cfg.Lab.AutoBackupFailures = 2
 		}
 	}
 

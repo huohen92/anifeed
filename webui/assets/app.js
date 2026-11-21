@@ -127,7 +127,6 @@ BGM: \${bgmUrl}
 BGM集标题: \${bgmEpisodeTitle}`;
 
 const PAGE_META = {
-  guangya: { title: '光鸭离线', subtitle: '光鸭下载并转存到 115' },
   dashboard: { title: '概览', subtitle: '', icon: 'dashboard' },
   feeds: { title: '订阅管理', subtitle: '', icon: 'rss' },
   tasks: { title: '离线任务', subtitle: '', icon: 'tasks' },
@@ -142,9 +141,14 @@ const state = {
   config: null,
   meta: null,
   tasks: [],
+  tasksLoaded: false,
+  taskVisible: 20,
   history: [],
+  historyLoaded: false,
   logs: [],
+  logsLoaded: false,
   route: '',
+  routeEpoch: 0,
   feedQuery: '',
   feedSource: '',
   feedWeekdays: (() => {
@@ -496,6 +500,7 @@ function renderRoute() {
   clearTimers();
   const route = currentRoute();
   state.route = route;
+  state.routeEpoch = (state.routeEpoch || 0) + 1;
   const meta = PAGE_META[route];
   document.title = 'AniFeed';
   $('#page-title').textContent = meta.title;
@@ -508,7 +513,6 @@ function renderRoute() {
     case 'dashboard': loadDashboard(); break;
     case 'feeds': loadFeedsPage(); break;
     case 'tasks': loadTasksPage(); break;
-    case 'guangya': loadGuangyaPage(); break;
     case 'history': loadHistoryPage(); break;
     case 'logs': loadLogsPage(); break;
     case 'settings': loadSettingsPage(); break;
@@ -533,6 +537,7 @@ function renderFatal(message) {
  * Dashboard
  * ================================================================ */
 async function loadDashboard() {
+  const epoch = state.routeEpoch;
   const view = $('#view');
   const hasCache = !!state.status;
   if (hasCache) {
@@ -550,6 +555,8 @@ async function loadDashboard() {
   ];
   jobs.push(api('/api/tasks?limit=200').then(data => { state.tasks = data.tasks || []; }).catch(() => { state.tasks = []; }));
   await Promise.allSettled(jobs);
+  if (state.history.length) state.historyLoaded = true;
+  if (state.routeEpoch !== epoch) return;
   if (!state.status) {
     renderFatal(statusError ? statusError.message : '无法读取服务状态');
     return;
@@ -786,17 +793,21 @@ function applyConfigState(config, meta) {
 }
 
 async function loadFeedsPage() {
-  if (!state.config) {
+  const epoch = state.routeEpoch;
+  if (state.config) {
+    renderFeedsPage();
+  } else {
     $('#view').innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取订阅配置…</span></div>`;
   }
   try {
     await ensureConfig();
     await loadStatus().catch(() => {});
-    await api('/api/history?limit=500').then(data => { state.history = data.items || []; }).catch(() => {});
+    await api('/api/history?limit=500').then(data => { state.history = data.items || []; state.historyLoaded = true; }).catch(() => {});
   } catch (err) {
-    renderFatal(err.message);
+    if (state.routeEpoch === epoch) renderFatal(err.message);
     return;
   }
+  if (state.routeEpoch !== epoch) return;
   renderFeedsPage();
 }
 
@@ -2417,6 +2428,7 @@ function openFeedModal(index, prefill = null) {
               <button class="btn btn-sm btn-ghost btn-icon-only" type="button" data-remove-subgroup title="删除">${icon('trash')}</button>
               <input type="hidden" data-sg="filter" value="${esc(group.filter || '')}">
               <input type="hidden" data-sg="exclude" value="${esc(group.exclude || '')}">
+              <input type="hidden" data-sg="start_episode" value="${Number(group.start_episode || 0)}">
             </div>
           </div>`;
         };
@@ -2427,6 +2439,7 @@ function openFeedModal(index, prefill = null) {
           offset: Number($('#feed-rename-offset', el).value || 0),
           filter: local.filter || '',
           exclude: local.exclude || '',
+          start_episode: 0,
           enabled: true,
         });
         const renderSubgroups = () => {
@@ -2513,6 +2526,7 @@ function openFeedModal(index, prefill = null) {
           enabled: row.querySelector('[data-sg="enabled"]').checked,
           filter: row.querySelector('[data-sg="filter"]').value,
           exclude: row.querySelector('[data-sg="exclude"]').value,
+          start_episode: Number(row.querySelector('[data-sg="start_episode"]').value || 0),
         });
         refreshBackupSources = renderSubgroups;
         renderSubgroups();
@@ -2525,6 +2539,7 @@ function openFeedModal(index, prefill = null) {
               url: pick.url,
               season: Number(feed.rename_season || 0),
               offset: Number(feed.rename_offset || 0),
+              start_episode: 0,
               enabled: true,
             });
             renderSubgroups();
@@ -2802,6 +2817,7 @@ function readFeedForm(root, local) {
       enabled: row.querySelector('[data-sg="enabled"]').checked,
       filter: row.querySelector('[data-sg="filter"]').value || '',
       exclude: row.querySelector('[data-sg="exclude"]').value || '',
+      start_episode: Number(row.querySelector('[data-sg="start_episode"]').value || 0),
     })).filter(group => group.url) : (local.subgroups || []),
     bgm_url: ($('#feed-bgm-url', root) || {}).value?.trim() || '',
     tmdb_id: ($('#feed-tmdb-id', root) || {}).value?.trim() || '',
@@ -3053,14 +3069,16 @@ function renderJob(job, root) {
 /* ================================================================
  * Tasks
  * ================================================================ */
-function loadGuangyaPage() {
-  $('#view').innerHTML = `<div class="card" style="padding:0;overflow:hidden;min-height:calc(100vh - 180px)"><iframe src="/guangya/" title="光鸭离线" style="display:block;width:100%;height:calc(100vh - 180px);border:0;background:#f6f8fc"></iframe></div>`;
-}
-
 async function loadTasksPage() {
-  $('#view').innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取 115 离线任务…</span></div>`;
+  const epoch = state.routeEpoch;
+  if (state.tasksLoaded) {
+    renderTasksPage();
+  } else {
+    $('#view').innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取 115 离线任务…</span></div>`;
+  }
   try {
     await loadStatus();
+    if (state.routeEpoch !== epoch) return;
     if (!state.status || !state.status.has_cookies) {
       $('#view').innerHTML = `<div class="card">${emptyBlock('lock', '尚未登录 115',
         '离线任务需要 115 登录后才能读取。请先在设置中填写 Cookies 或扫码登录。',
@@ -3069,7 +3087,9 @@ async function loadTasksPage() {
     }
     const data = await api('/api/tasks?limit=300');
     state.tasks = data.tasks || [];
+    state.tasksLoaded = true;
   } catch (err) {
+    if (state.routeEpoch !== epoch) return;
     $('#view').innerHTML = `<div class="card">${emptyBlock('cloud', '无法读取 115 任务', err.message,
       `<button class="btn btn-primary" id="tasks-retry">${icon('refresh')}重试</button>
        <a class="btn" href="#/settings">${icon('login')}检查登录</a>`)}</div>`;
@@ -3077,6 +3097,7 @@ async function loadTasksPage() {
     if (btn) btn.addEventListener('click', loadTasksPage);
     return;
   }
+  if (state.routeEpoch !== epoch) return;
   renderTasksPage();
 }
 
@@ -3117,6 +3138,7 @@ function renderTasksPage() {
     const btn = event.target.closest('[data-task-filter]');
     if (!btn) return;
     state.taskFilter = btn.dataset.taskFilter;
+    state.taskVisible = 20;
     $$('#task-tabs button').forEach(el => el.classList.toggle('active', el.dataset.taskFilter === state.taskFilter));
     renderTaskTable();
   });
@@ -3134,8 +3156,9 @@ function visibleTasks() {
 function renderTaskTable() {
   const container = $('#task-table-card');
   if (!container) return;
-  const tasks = visibleTasks();
-  if (!tasks.length) {
+  const allTasks = visibleTasks();
+  const tasks = allTasks.slice(0, state.taskVisible);
+  if (!allTasks.length) {
     container.innerHTML = emptyBlock('cloud', '没有任务', '当前筛选条件下没有 115 离线任务。',
       `<button class="btn btn-primary" id="empty-add-magnet">${icon('plus')}添加链接</button>`);
     const btn = $('#empty-add-magnet');
@@ -3152,7 +3175,9 @@ function renderTaskTable() {
       <td class="numeric" data-label="Hash">${esc((task.info_hash || '').slice(0, 16))}${task.info_hash && task.info_hash.length > 16 ? '…' : ''}</td>
       <td class="actions" data-label="操作"><button class="btn btn-sm btn-ghost task-copy-btn" data-copy-hash="${esc(task.info_hash)}" title="复制 Hash">${icon('copy')}<span class="task-copy-label">复制</span></button></td>
     </tr>`).join('')}</tbody>
-  </table></div>`;
+  </table></div>${allTasks.length > tasks.length ? `<div style="text-align:center;padding:12px"><button class="btn btn-sm" id="task-load-more">加载更多（${allTasks.length - tasks.length}）</button></div>` : ''}`;
+  const loadMore = $('#task-load-more');
+  if (loadMore) loadMore.addEventListener('click', () => { state.taskVisible += 20; renderTaskTable(); });
   $$('[data-copy-hash]', container).forEach(btn => {
     btn.addEventListener('click', () => copyText(btn.dataset.copyHash));
   });
@@ -3253,17 +3278,24 @@ function openMagnetModal() {
  * History
  * ================================================================ */
 async function loadHistoryPage() {
-  $('#view').innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取历史记录…</span></div>`;
+  const epoch = state.routeEpoch;
+  if (state.historyLoaded) {
+    renderHistoryPage();
+  } else {
+    $('#view').innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取历史记录…</span></div>`;
+  }
   try {
     await ensureConfig().catch(() => {});
     const params = new URLSearchParams({ limit: String(state.historyLimit) });
     if (state.historyName) params.set('name', state.historyName);
     const data = await api(`/api/history?${params}`);
     state.history = data.items || [];
+    state.historyLoaded = true;
   } catch (err) {
-    renderFatal(err.message);
+    if (state.routeEpoch === epoch) renderFatal(err.message);
     return;
   }
+  if (state.routeEpoch !== epoch) return;
   renderHistoryPage();
 }
 
@@ -3310,14 +3342,19 @@ function renderHistoryPage() {
  * Logs
  * ================================================================ */
 async function loadLogsPage() {
+  const epoch = state.routeEpoch;
   if (state.logTimer) { clearInterval(state.logTimer); state.logTimer = null; }
   const view = $('#view');
-  if (!view.querySelector('#log-pre') && !view.querySelector('#log-list')) {
+  if (state.logsLoaded) {
+    renderLogsPage();
+  } else if (!view.querySelector('#log-pre') && !view.querySelector('#log-list')) {
     view.innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取日志…</span></div>`;
   }
   try {
     const data = await api('/api/logs?limit=500');
     state.logs = data.lines || [];
+    state.logsLoaded = true;
+    if (state.routeEpoch !== epoch) return;
     renderLogsPage();
     if (state.logAuto) {
       state.logTimer = setInterval(refreshLogsOnly, 3000);
@@ -3445,15 +3482,21 @@ function renderLogLines(lines) {
 }
 
 async function loadSettingsPage() {
-  if (!state.config) renderSettingsSkeleton();
+  const epoch = state.routeEpoch;
+  if (state.config) {
+    renderSettingsPage();
+  } else {
+    renderSettingsSkeleton();
+  }
   try {
     const resp = await api('/api/config');
     applyConfigState(resp.config, resp.meta);
     await loadStatus().catch(() => {});
   } catch (err) {
-    renderFatal(err.message);
+    if (state.routeEpoch === epoch) renderFatal(err.message);
     return;
   }
+  if (state.routeEpoch !== epoch) return;
   renderSettingsPage();
 }
 
@@ -3503,34 +3546,45 @@ function initSettingsSections() {
   const cards = $$('.settings-stack > section.card');
   if (!cards.length) return;
   const groupByTitle = {
-    '115 账号': 'connection',
-    '115 登录': 'connection',
+    '115 账号': 'download',
     '服务与访问': 'connection',
-    '网络代理': 'connection',
-    '数据库与缓存': 'system',
-    '默认离线设置': 'offline',
-    '自动运行': 'offline',
-    '重命名': 'rename',
-    'TMDB': 'rename',
+    '默认离线设置': 'download',
+    'qBittorrent': 'download',
+    '自动运行': 'download',
+    '重命名': 'organize',
+    'TMDB': 'organize',
+    '洗板': 'organize',
+    '多字幕组': 'subgroups',
+    '喜好字幕组': 'subgroups',
+    '自动备用字幕组': 'subgroups',
     '通知': 'notify',
-    '站点选项': 'notify',
-    '配置文件': 'system',
-    '当前状态': 'system',
-    '多字幕组': 'lab',
-    '喜好字幕组': 'lab',
-    '洗板': 'lab',
-    '自动备用字幕组': 'lab',
+    '数据库与缓存': 'advanced',
+    '关于': 'about',
   };
+  const sectionMeta = {
+    connection: ['连接与账号', '115 账号、Web 访问和代理设置'],
+    download: ['下载器', '115、qBittorrent 的账号、地址和保存设置'],
+    organize: ['整理与命名', '重命名、TMDB 关联和洗板'],
+    subgroups: ['字幕组', '多字幕组、喜好顺序和自动备用'],
+    notify: ['通知', '推送渠道、事件开关和模板'],
+    advanced: ['高级', '数据库、缓存与 115 请求节流'],
+    about: ['关于', '版本和项目信息'],
+  };
+
   cards.forEach(card => {
     const title = (card.querySelector('.section-title h3') || {}).textContent || '';
     card.dataset.settingsGroup = groupByTitle[title.trim()] || 'connection';
   });
   const buttons = $$('[data-settings-section]');
+  if (!buttons.some(button => button.dataset.settingsSection === state.settingsSection)) state.settingsSection = 'connection';
+  const intro = $('#settings-section-intro');
   const apply = () => {
+    const meta = sectionMeta[state.settingsSection] || sectionMeta.connection;
     buttons.forEach(button => button.classList.toggle('active', button.dataset.settingsSection === state.settingsSection));
     cards.forEach(card => {
       card.style.display = card.dataset.settingsGroup === state.settingsSection ? '' : 'none';
     });
+    if (intro) intro.innerHTML = `<strong>${meta[0]}</strong><span>${meta[1]}</span>`;
   };
   buttons.forEach(button => button.addEventListener('click', () => {
     state.settingsSection = button.dataset.settingsSection;
@@ -3547,7 +3601,7 @@ function renderSettingsSkeleton() {
   </section>`;
   $('#view').innerHTML = `
     <div class="settings-grid"><div>
-      <div class="subtabs"><button disabled>账号与连接</button><button disabled>离线与任务</button><button disabled>重命名与 TMDB</button><button disabled>通知与站点</button><button disabled>实验室</button><button disabled>系统信息</button></div>
+      <div class="subtabs"><button disabled>连接与账号</button><button disabled>下载器</button><button disabled>整理与命名</button><button disabled>字幕组</button><button disabled>通知</button><button disabled>高级</button><button disabled>关于</button></div>
       <div class="settings-loading-panel">
         <div class="settings-stack">${skeletonCard('115 账号', 3)}${skeletonCard('默认离线设置', 5)}${skeletonCard('通知与站点', 4)}</div>
         <div class="settings-loading-veil"><span class="spinner"></span><strong>正在读取配置…</strong></div>
@@ -3710,6 +3764,7 @@ function renderSettingsPage() {
       <section class="card">
         <div class="section-title"><span class="ico">${icon('download')}</span><div><h3>默认离线设置</h3><p>所有订阅未单独指定时使用的默认值</p></div></div>
         <div class="section-body">
+          <div class="section-subtitle">存储位置</div>
           <div class="form-grid">
             <label class="field"><span>离线文件夹</span>
               <div class="field-row"><input class="input" id="set-default-cid-name" readonly placeholder="使用 115 默认目录"><input type="hidden" id="set-default-cid" value="${esc((cfg.offline || {}).default_cid || '')}"><button class="btn btn-sm" type="button" id="set-default-cid-pick">${icon('folder')}选择</button></div>
@@ -3732,6 +3787,7 @@ function renderSettingsPage() {
             </label>
             <label class="field span-2"><span>全局排除规则</span><textarea class="textarea mono" id="set-global-exclude" rows="3" placeholder="720p&#10;/\\.5&#36;/">${esc(((cfg.offline || {}).global_exclude || []).join('\n'))}</textarea><span class="hint">每行一条，标题包含即跳过；支持 <code>/正则/</code>。对所有订阅生效。</span></label>
           </div>
+          <div class="section-subtitle" style="margin-top:16px">任务行为</div>
           <div class="form-grid">
             <label class="field"><span>失败重试次数</span><input class="input" id="set-retry" type="number" min="0" max="100" value="${Number((cfg.offline || {}).retry || 0)}"><span class="hint">115 提交失败后重试的次数。</span></label>
             <label class="field"><span>跳过 x.5 集</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-skip-x5" ${(cfg.offline || {}).skip_x5 ? 'checked' : ''}><span></span></span><span>跳过 12.5 这类集数</span></span></label>
@@ -3741,10 +3797,29 @@ function renderSettingsPage() {
             <label class="field span-2"><span>保存文件夹只保留视频和字幕</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-keep-only-video" ${(cfg.offline || {}).keep_only_video ? 'checked' : ''}><span></span></span><span>离线后转移到保存文件夹下，只把视频和字幕移动到保存文件夹；字体/其他文件留在离线目录，字幕自动追加 .sc/.tc 等语言后缀</span></span></label>
             <label class="field span-2"><span>同一 RSS 内每集只选一个版本</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-one-per-episode" ${(cfg.offline || {}).one_per_episode ? 'checked' : ''}><span></span></span><span>关闭时同一 RSS 内所有版本都会提交；开启后只提交评分最高的一个，不影响主 RSS 与备用 RSS 之间各自保留版本</span></span></label>
           </div>
+          <div class="section-subtitle" style="margin-top:16px">自动规则</div>
           <label class="field span-2"><span>使用自动规则</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-auto-rules" ${(cfg.offline || {}).auto_rules ? 'checked' : ''}><span></span></span><span>打开「规则与重命名」时，自动按下方优先级选择最佳规则（可再手动调整）</span></span></label>
           <div class="section-subtitle" style="margin-top:16px">自动应用最佳规则优先顺序</div>
           <div class="hint" style="margin-bottom:8px">从上到下依次尝试；当前 RSS 不存在的选项会自动跳过。</div>
           <div id="priority-editor"></div>
+        </div>
+      </section>
+
+
+
+      <section class="card">
+        <div class="section-title"><span class="ico">${icon('download')}</span><div><h3>qBittorrent</h3><p>本地下载器：115 失败后的最后兜底</p></div><span style="margin-left:auto" class="badge ${(cfg.downloader || {}).qbittorrent && cfg.downloader.qbittorrent.enabled ? 'badge-success' : ''}">${(cfg.downloader || {}).qbittorrent && cfg.downloader.qbittorrent.enabled ? '已开启' : '未开启'}</span></div>
+        <div class="section-body">
+          <label class="field"><span>启用 qBittorrent</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-qb-enabled" ${(cfg.downloader || {}).qbittorrent && cfg.downloader.qbittorrent.enabled ? 'checked' : ''}><span></span></span><span>115 失败达到阈值后提交本地 qBittorrent</span></span></label>
+          <div class="form-grid">
+            <label class="field span-2"><span>WebUI 地址</span><input class="input mono" id="set-qb-url" value="${esc(((cfg.downloader || {}).qbittorrent || {}).url || '')}" placeholder="http://127.0.0.1:8080"></label>
+            <label class="field"><span>用户名</span><input class="input" id="set-qb-user" value="${esc(((cfg.downloader || {}).qbittorrent || {}).username || '')}" placeholder="admin"></label>
+            <label class="field"><span>密码</span><input class="input" id="set-qb-pass" type="password" value="${esc(((cfg.downloader || {}).qbittorrent || {}).password || '')}"></label>
+            <label class="field"><span>保存路径</span><input class="input mono" id="set-qb-save" value="${esc(((cfg.downloader || {}).qbittorrent || {}).save_path || '')}" placeholder="留空使用 qB 默认路径"></label>
+            <label class="field"><span>分类</span><input class="input" id="set-qb-category" value="${esc(((cfg.downloader || {}).qbittorrent || {}).category || '')}" placeholder="anifeed"></label>
+            <label class="field"><span>115 失败阈值</span><input class="input" id="set-qb-threshold" type="number" min="1" max="20" value="${Number(((cfg.downloader || {}).qbittorrent || {}).fallback_threshold || 3)}"><span class="hint">115 连续失败达到次数后触发 qBittorrent。</span></label>
+          </div>
+          <div class="field-row"><button class="btn btn-sm" id="qb-test" type="button">${icon('link')}测试连接</button><span class="hint">测试会登录 qBittorrent WebUI 并读取版本。</span></div>
         </div>
       </section>
 
@@ -3833,33 +3908,23 @@ function renderSettingsPage() {
       </section>
 
       <section class="card">
-        <div class="section-title"><span class="ico">${icon('shield')}</span><div><h3>站点选项</h3><p>为特定域名启用代理或追加请求头</p></div><button class="btn btn-sm" id="add-site" style="margin-left:auto">${icon('plus')}添加站点</button></div>
-        <div class="section-body" id="sites-editor"></div>
-      </section>
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('file')}</span><div><h3>配置文件</h3><p>当前实例使用的文件路径</p></div></div>
+        <div class="section-title"><span class="ico">${icon('info')}</span><div><h3>关于</h3><p>AniFeed 项目信息</p></div></div>
         <div class="section-body">
+          <div class="about-head"><span class="brand-mark"><img src="/logo.png" alt="AniFeed"></span><div><h2>AniFeed</h2><p>RSS → 115 离线 · 自托管动漫下载管理</p></div></div>
           <div class="kv">
-            <div class="kv-row"><span>config.toml</span><code>${esc(meta.path || '—')}</code></div>
-            <div class="kv-row"><span>Cookies 文件</span><code>${esc(meta.cookies_path || '—')}</code></div>
-            <div class="kv-row"><span>数据库</span><code>${esc(meta.database_path || '—')}</code></div>
+            <div class="kv-row"><span>版本</span><code>v${esc(state.status ? state.status.version : '0.02')}</code></div>
+            <div class="kv-row"><span>GitHub</span><a href="https://github.com/huohen92/anifeed" target="_blank" rel="noopener noreferrer">github.com/huohen92/anifeed</a></div>
+            <div class="kv-row"><span>Docker</span><code>huohen92/anifeed:0.02</code></div>
+            <div class="kv-row"><span>fnOS FPK</span><a href="https://github.com/huohen92/anifeed/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a></div>
+            <div class="kv-row"><span>许可</span><code>MIT</code></div>
           </div>
+          <div class="notice" style="margin-top:14px">${icon('info')}<span>115 为主下载器；qBittorrent 为本地兜底下载器。</span></div>
         </div>
       </section>
 
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('info')}</span><div><h3>当前状态</h3><p>服务运行概览</p></div></div>
-        <div class="section-body">
-          <div class="kv">
-            <div class="kv-row"><span>服务版本</span><code>v${esc(state.status ? state.status.version : '—')}</code></div>
-            <div class="kv-row"><span>订阅数量</span><code>${state.status ? state.status.feed_count : '—'}</code></div>
-            <div class="kv-row"><span>登录状态</span><code>${esc(loginStateText)}</code></div>
-            <div class="kv-row"><span>自动运行</span><code>${(cfg.auto || {}).enabled ? `每 ${Number((cfg.auto || {}).interval_minutes || 30)} 分钟` : '未开启'}</code></div>
-            <div class="kv-row"><span>GitHub</span><a href="https://github.com/huohen92/anifeed" target="_blank" rel="noopener noreferrer">huohen92/anifeed</a></div>
-          </div>
-        </div>
-      </section>
+
+
+
 
       <section class="card">
         <div class="section-title"><span class="ico">${icon('beaker')}</span><div><h3>多字幕组</h3><p>实验功能：允许同一番剧保留多个字幕组</p></div></div>
@@ -3901,7 +3966,9 @@ function renderSettingsPage() {
       <section class="card">
         <div class="section-title"><span class="ico">${icon('refresh')}</span><div><h3>自动备用字幕组</h3><p>配合摸鱼提醒自动补充字幕组</p></div></div>
         <div class="section-body">
-          <label class="field span-2"><span>自动添加备用字幕组</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-backup" ${(cfg.lab || {}).auto_backup_subgroup ? 'checked' : ''}><span></span></span><span>摸鱼时自动添加备用字幕组，且必须有缺失的那一集</span></span></label>
+          <label class="field span-2"><span>自动添加备用字幕组</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-backup" ${(cfg.lab || {}).auto_backup_subgroup ? 'checked' : ''}><span></span></span><span>115 连续下载失败后，自动补充有缺失集数的备用字幕组 RSS</span></span></label>
+          <label class="field"><span>连续失败触发次数</span><input class="input" id="set-lab-auto-backup-failures" type="number" min="1" max="20" value="${Number((cfg.lab || {}).auto_backup_failures || 2)}"><span class="hint">115 失败任务被监控到该次数后触发检查。</span></label>
+          <div class="field-row"><button class="btn btn-sm" id="auto-backup-now" type="button">${icon('refresh')}立即检查备用字幕组</button><span class="hint">检查缺失集数并匹配喜好字幕组，结果写入运行日志。</span></div>
           <label class="field span-2"><span>自动应用规则</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-apply" ${(cfg.lab || {}).auto_apply_rules ? 'checked' : ''}><span></span></span><span>自动添加的备用字幕组使用自动应用最佳规则</span></span></label>
           <label class="field span-2"><span>显示表单提示</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-hide-hints" ${!(cfg.lab || {}).hide_hints ? 'checked' : ''}><span></span></span><span>关闭后隐藏字段下方说明文字；? / ! 帮助入口仍然保留</span></span></label>
           <div class="notice">${icon('info')}<span>以上为实验性选项，先保存配置；完整执行逻辑会在后续版本接入。</span></div>
@@ -3925,13 +3992,15 @@ function renderSettingsPage() {
     <div class="settings-grid">
       <div>
         ${state.settingsTab === 'form' ? `<div class="subtabs" id="settings-subtabs">
-          <button data-settings-section="connection">账号与连接</button>
-          <button data-settings-section="offline">离线与任务</button>
-          <button data-settings-section="rename">重命名与 TMDB</button>
-          <button data-settings-section="notify">通知与站点</button>
-          <button data-settings-section="lab">实验室</button>
-          <button data-settings-section="system">系统信息</button>
-        </div>` : ''}
+          <button data-settings-section="connection">连接与账号</button>
+          <button data-settings-section="download">下载器</button>
+          <button data-settings-section="organize">整理与命名</button>
+          <button data-settings-section="subgroups">字幕组</button>
+          <button data-settings-section="notify">通知</button>
+          <button data-settings-section="advanced">高级</button>
+          <button data-settings-section="about">关于</button>
+        </div>
+        <div class="settings-section-intro" id="settings-section-intro"></div>` : ''}
         <div id="settings-content">${state.settingsTab === 'form' ? formTab : rawTab}</div>
         <div class="sticky-save" id="settings-savebar">
           <span class="dirty" id="dirty-hint">所有修改在点击保存后写入 config.toml</span>
@@ -3960,15 +4029,21 @@ function renderSettingsPage() {
   $('#settings-cancel').addEventListener('click', reload);
 
   if (state.settingsTab === 'form') {
-    renderSitesEditor();
-    $('#add-site').addEventListener('click', () => {
-      state.settingsSites.push({ host: '', https_agent: false, headers: [] });
-      renderSitesEditor(true);
-      markDirty();
-    });
     $('#qr-login').addEventListener('click', openQrModal);
     $('#logout-btn').addEventListener('click', logout);
     $('#notify-test').addEventListener('click', testNotification);
+    $('#auto-backup-now')?.addEventListener('click', async () => {
+      const btn = $('#auto-backup-now'); btn.disabled = true;
+      try { await api('/api/lab/auto-backup', { method: 'POST', body: {} }); toast('已开始检查，稍后查看运行日志', 'success'); }
+      catch (e) { toast(e.message, 'error', 5000); }
+      finally { btn.disabled = false; }
+    });
+    $('#qb-test')?.addEventListener('click', async () => {
+      const btn = $('#qb-test'); btn.disabled = true; btn.textContent = '连接中…';
+      try { const r = await api('/api/downloaders/qb/test', { method: 'POST', body: {} }); toast('qBittorrent 已连接：' + (r.version || 'OK'), 'success'); }
+      catch (e) { toast(e.message, 'error', 5000); }
+      finally { btn.disabled = false; btn.innerHTML = `${icon('link')}测试连接`; }
+    });
     $('#set-default-cid-pick').addEventListener('click', () => {
       openFolderPicker(({ cid, path }) => {
         $('#set-default-cid').value = cid;
@@ -4112,6 +4187,7 @@ function renderSitesEditor(focusLast = false) {
     preferred_subgroups: [...(state.labPreferred || [])],
     inactive_subgroups: [...(state.labInactive || [])],
     auto_backup_subgroup: $('#set-lab-auto-backup').checked,
+    auto_backup_failures: Number($('#set-lab-auto-backup-failures').value || 2),
     auto_apply_rules: $('#set-lab-auto-apply').checked,
     hide_hints: !$('#set-lab-hide-hints').checked,
   };
@@ -4133,6 +4209,7 @@ function renderSitesEditor(focusLast = false) {
     preferred_subgroups: [...(state.labPreferred || [])],
     inactive_subgroups: [...(state.labInactive || [])],
     auto_backup_subgroup: $('#set-lab-auto-backup').checked,
+    auto_backup_failures: Number($('#set-lab-auto-backup-failures').value || 2),
     auto_apply_rules: $('#set-lab-auto-apply').checked,
     hide_hints: !$('#set-lab-hide-hints').checked,
   };
@@ -4325,6 +4402,23 @@ function collectSettings() {
     mikan_host: $('#set-mikan-host').value.trim(),
     rss_timeout_seconds: Number($('#set-rss-timeout').value || 20),
   };
+  cfg.downloader = {
+    primary_115: {
+      enabled: true,
+      offline_cid: $('#set-default-cid').value.trim(),
+      save_path: '',
+    },
+
+    qbittorrent: {
+      enabled: $('#set-qb-enabled').checked,
+      url: $('#set-qb-url').value.trim(),
+      username: $('#set-qb-user').value.trim(),
+      password: $('#set-qb-pass').value,
+      save_path: $('#set-qb-save').value.trim(),
+      category: $('#set-qb-category').value.trim(),
+      fallback_threshold: Number($('#set-qb-threshold').value || 3),
+    },
+  };
   cfg.offline = {
     default_cid: $('#set-default-cid').value.trim(),
     default_savepath: '',
@@ -4388,17 +4482,11 @@ function collectSettings() {
     preferred_subgroups: [...(state.labPreferred || [])],
     inactive_subgroups: [...(state.labInactive || [])],
     auto_backup_subgroup: $('#set-lab-auto-backup').checked,
+    auto_backup_failures: Number($('#set-lab-auto-backup-failures').value || 2),
     auto_apply_rules: $('#set-lab-auto-apply').checked,
     hide_hints: !$('#set-lab-hide-hints').checked,
   };
-  syncSitesFromDom();
-  cfg.sites = {};
-  for (const site of state.settingsSites || []) {
-    if (!site.host) continue;
-    const headers = {};
-    for (const h of site.headers) if (h.key) headers[h.key] = h.value;
-    cfg.sites[site.host] = { https_agent: !!site.https_agent, headers };
-  }
+  cfg.sites = (state.config && state.config.sites) || {};
   return cfg;
 }
 

@@ -128,19 +128,41 @@ type EditableLab struct {
 	PreferredSubgroups  []string `json:"preferred_subgroups"`
 	InactiveSubgroups   []string `json:"inactive_subgroups"`
 	AutoBackupSubgroup  bool     `json:"auto_backup_subgroup"`
+	AutoBackupFailures  int      `json:"auto_backup_failures"`
 	AutoApplyRules      bool     `json:"auto_apply_rules"`
 	HideHints           bool     `json:"hide_hints"`
 }
 
 // EditableSubgroup is one extra RSS source for a subscription.
 type EditableSubgroup struct {
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Season  int    `json:"season"`
-	Offset  int    `json:"offset"`
-	Filter  string `json:"filter"`
-	Exclude string `json:"exclude"`
-	Enabled bool   `json:"enabled"`
+	Name         string `json:"name"`
+	URL          string `json:"url"`
+	Season       int    `json:"season"`
+	Offset       int    `json:"offset"`
+	Filter       string `json:"filter"`
+	Exclude      string `json:"exclude"`
+	StartEpisode int    `json:"start_episode"`
+	Enabled      bool   `json:"enabled"`
+}
+
+// EditableDownloader is one downloader configuration.
+type EditableDownloader struct {
+	Enabled           bool   `json:"enabled"`
+	OfflineCid        string `json:"offline_cid"`
+	SavePath          string `json:"save_path"`
+	OfflineParentID   string `json:"offline_parent_id"`
+	FallbackThreshold int    `json:"fallback_threshold"`
+	DailyLimit        int    `json:"daily_limit"`
+	HighSpeedMB       int    `json:"high_speed_mb"`
+	URL               string `json:"url"`
+	Username          string `json:"username"`
+	Password          string `json:"password"`
+	Category          string `json:"category"`
+}
+
+type EditableDownloaders struct {
+	Primary115  EditableDownloader `json:"primary_115"`
+	QBittorrent EditableDownloader `json:"qbittorrent"`
 }
 
 // EditableRSS is one [[rss]] entry.
@@ -190,6 +212,7 @@ type EditableConfig struct {
 	Auto         EditableAuto            `json:"auto"`
 	Notify       EditableNotify          `json:"notify"`
 	Lab          EditableLab             `json:"lab"`
+	Downloader   EditableDownloaders     `json:"downloader"`
 	RSS          []EditableRSS           `json:"rss"`
 	Sites        map[string]EditableSite `json:"sites"`
 }
@@ -322,8 +345,25 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 			PreferredSubgroups:  append([]string(nil), cfg.Lab.PreferredSubgroups...),
 			InactiveSubgroups:   append([]string(nil), cfg.Lab.InactiveSubgroups...),
 			AutoBackupSubgroup:  cfg.Lab.AutoBackupSubgroup,
+			AutoBackupFailures:  cfg.Lab.AutoBackupFailures,
 			AutoApplyRules:      cfg.Lab.AutoApplyRules,
 			HideHints:           cfg.Lab.HideHints,
+		},
+		Downloader: EditableDownloaders{
+			Primary115: EditableDownloader{
+				Enabled: true, OfflineCid: cfg.Downloaders.Primary115.OfflineCid,
+				SavePath: cfg.Downloaders.Primary115.SavePath,
+			},
+
+			QBittorrent: EditableDownloader{
+				Enabled:           cfg.Downloaders.QBittorrent.Enabled,
+				URL:               cfg.Downloaders.QBittorrent.URL,
+				Username:          cfg.Downloaders.QBittorrent.Username,
+				Password:          cfg.Downloaders.QBittorrent.Password,
+				SavePath:          cfg.Downloaders.QBittorrent.SavePath,
+				Category:          cfg.Downloaders.QBittorrent.Category,
+				FallbackThreshold: cfg.Downloaders.QBittorrent.FallbackThreshold,
+			},
 		},
 		RSS:   make([]EditableRSS, 0),
 		Sites: make(map[string]EditableSite),
@@ -726,6 +766,22 @@ func buildTOMLConfig(ec *EditableConfig, configPath string) (*config.TOMLConfig,
 			HourlyEnabled:          ec.Notify.HourlyEnabled,
 			HourlyHours:            append([]int(nil), ec.Notify.HourlyHours...),
 		},
+		Downloader: config.TOMLDownloadersConfig{
+			Primary115: config.TOMLDownloaderConfig{
+				Enabled: true, OfflineCid: strings.TrimSpace(ec.Downloader.Primary115.OfflineCid),
+				SavePath: strings.TrimSpace(ec.Downloader.Primary115.SavePath),
+			},
+
+			QBittorrent: config.TOMLDownloaderConfig{
+				Enabled:           ec.Downloader.QBittorrent.Enabled,
+				URL:               strings.TrimSpace(ec.Downloader.QBittorrent.URL),
+				Username:          strings.TrimSpace(ec.Downloader.QBittorrent.Username),
+				Password:          ec.Downloader.QBittorrent.Password,
+				SavePath:          strings.TrimSpace(ec.Downloader.QBittorrent.SavePath),
+				Category:          strings.TrimSpace(ec.Downloader.QBittorrent.Category),
+				FallbackThreshold: ec.Downloader.QBittorrent.FallbackThreshold,
+			},
+		},
 		Lab: config.TOMLLabConfig{
 			MultiSubgroup:       ec.Lab.MultiSubgroup,
 			MultiRssCoexist:     ec.Lab.MultiRssCoexist,
@@ -737,6 +793,7 @@ func buildTOMLConfig(ec *EditableConfig, configPath string) (*config.TOMLConfig,
 			PreferredSubgroups:  nonEmptyRules(ec.Lab.PreferredSubgroups),
 			InactiveSubgroups:   nonEmptyRules(ec.Lab.InactiveSubgroups),
 			AutoBackupSubgroup:  ec.Lab.AutoBackupSubgroup,
+			AutoBackupFailures:  ec.Lab.AutoBackupFailures,
 			AutoApplyRules:      ec.Lab.AutoApplyRules,
 			HideHints:           ec.Lab.HideHints,
 		},
@@ -964,7 +1021,7 @@ func normalizeEditableEvents(values []string) []string {
 func editableSubgroups(values []config.RssSubgroup) []EditableSubgroup {
 	result := make([]EditableSubgroup, 0, len(values))
 	for _, value := range values {
-		result = append(result, EditableSubgroup{Name: value.Name, URL: value.URL, Season: value.Season, Offset: value.Offset, Filter: value.Filter, Exclude: value.Exclude, Enabled: value.IsEnabled()})
+		result = append(result, EditableSubgroup{Name: value.Name, URL: value.URL, Season: value.Season, Offset: value.Offset, Filter: value.Filter, Exclude: value.Exclude, StartEpisode: value.StartEpisode, Enabled: value.IsEnabled()})
 	}
 	return result
 }
@@ -973,7 +1030,7 @@ func tomlSubgroups(values []EditableSubgroup) []config.TOMLRSSSubgroup {
 	result := make([]config.TOMLRSSSubgroup, 0, len(values))
 	for _, value := range values {
 		enabled := value.Enabled
-		result = append(result, config.TOMLRSSSubgroup{Name: strings.TrimSpace(value.Name), URL: strings.TrimSpace(value.URL), Season: value.Season, Offset: value.Offset, Filter: strings.TrimSpace(value.Filter), Exclude: strings.TrimSpace(value.Exclude), Enabled: &enabled})
+		result = append(result, config.TOMLRSSSubgroup{Name: strings.TrimSpace(value.Name), URL: strings.TrimSpace(value.URL), Season: value.Season, Offset: value.Offset, Filter: strings.TrimSpace(value.Filter), Exclude: strings.TrimSpace(value.Exclude), StartEpisode: value.StartEpisode, Enabled: &enabled})
 	}
 	return result
 }
@@ -985,7 +1042,7 @@ func editableSubgroupsFromTOML(values []config.TOMLRSSSubgroup) []EditableSubgro
 		if value.Enabled != nil {
 			enabled = *value.Enabled
 		}
-		result = append(result, EditableSubgroup{Name: value.Name, URL: value.URL, Season: value.Season, Offset: value.Offset, Filter: value.Filter, Exclude: value.Exclude, Enabled: enabled})
+		result = append(result, EditableSubgroup{Name: value.Name, URL: value.URL, Season: value.Season, Offset: value.Offset, Filter: value.Filter, Exclude: value.Exclude, StartEpisode: value.StartEpisode, Enabled: enabled})
 	}
 	return result
 }

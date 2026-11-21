@@ -14,13 +14,14 @@ var (
 )
 
 type RssSubgroup struct {
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Season  int    `json:"season,omitempty"`
-	Offset  int    `json:"offset,omitempty"`
-	Filter  string `json:"filter,omitempty"`
-	Exclude string `json:"exclude,omitempty"`
-	Enabled bool   `json:"enabled"`
+	Name         string `json:"name"`
+	URL          string `json:"url"`
+	Season       int    `json:"season,omitempty"`
+	Offset       int    `json:"offset,omitempty"`
+	Filter       string `json:"filter,omitempty"`
+	Exclude      string `json:"exclude,omitempty"`
+	StartEpisode int    `json:"start_episode,omitempty"`
+	Enabled      bool   `json:"enabled"`
 }
 
 type RssConfig struct {
@@ -35,6 +36,7 @@ type RssConfig struct {
 	SavePath       string        `json:"savepath,omitempty"`
 	Filter         string        `json:"filter,omitempty"`
 	Exclude        string        `json:"exclude,omitempty"`
+	StartEpisode   int           `json:"start_episode,omitempty"`
 	Expiration     uint          `json:"expiration,omitempty"`
 	GlobalExcludes []string      `json:"-"`
 	SkipX5         bool          `json:"-"`
@@ -73,6 +75,7 @@ func ReadRssConfigDict() *map[string][]RssConfig {
 				SavePath:     c.SavePath,
 				Filter:       c.Filter,
 				Exclude:      c.Exclude,
+				StartEpisode: c.StartEpisode,
 				Expiration:   c.Expiration,
 				RenameSeason: c.RenameSeason,
 				RenameOffset: c.RenameOffset,
@@ -191,7 +194,7 @@ func normalizeRSSURL(raw string) string {
 func transformSubgroups(values []config.RssSubgroup) []RssSubgroup {
 	result := make([]RssSubgroup, 0, len(values))
 	for _, value := range values {
-		result = append(result, RssSubgroup{Name: value.Name, URL: value.URL, Season: value.Season, Offset: value.Offset, Filter: value.Filter, Exclude: value.Exclude, Enabled: value.IsEnabled()})
+		result = append(result, RssSubgroup{Name: value.Name, URL: value.URL, Season: value.Season, Offset: value.Offset, Filter: value.Filter, Exclude: value.Exclude, StartEpisode: value.StartEpisode, Enabled: value.IsEnabled()})
 	}
 	return result
 }

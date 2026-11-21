@@ -26,6 +26,7 @@ type TOMLConfig struct {
 	Auto         TOMLAutoConfig            `toml:"auto"`
 	Notify       TOMLNotifyConfig          `toml:"notify"`
 	Lab          TOMLLabConfig             `toml:"lab"`
+	Downloader   TOMLDownloadersConfig     `toml:"downloader"`
 	RSS          []TOMLRSSConfig           `toml:"rss"`
 	Sites        map[string]TOMLSiteConfig `toml:"sites"`
 	Compat       TOMLCompatConfig          `toml:"compat"`
@@ -58,6 +59,26 @@ type TOMLOfflineConfig struct {
 	AutoContainer        []string `toml:"auto_container"`
 	AutoResolution       []string `toml:"auto_resolution"`
 	AutoRules            bool     `toml:"auto_rules"`
+}
+
+// TOMLDownloadersConfig holds the 115 primary and qBittorrent auxiliary downloaders.
+type TOMLDownloadersConfig struct {
+	Primary115  TOMLDownloaderConfig `toml:"primary_115"`
+	QBittorrent TOMLDownloaderConfig `toml:"qbittorrent"`
+}
+
+type TOMLDownloaderConfig struct {
+	Enabled           bool   `toml:"enabled"`
+	OfflineCid        string `toml:"offline_cid"`
+	SavePath          string `toml:"save_path"`
+	OfflineParentID   string `toml:"offline_parent_id"`
+	FallbackThreshold int    `toml:"fallback_threshold"`
+	DailyLimit        int    `toml:"daily_limit"`
+	HighSpeedMB       int    `toml:"high_speed_mb"`
+	URL               string `toml:"url"`
+	Username          string `toml:"username"`
+	Password          string `toml:"password"`
+	Category          string `toml:"category"`
 }
 
 // TOMLTMDBConfig holds TMDB API settings.
@@ -144,13 +165,14 @@ type TOMLProxyConfig struct {
 
 // TOMLRSSConfig represents a single RSS feed configuration
 type TOMLRSSSubgroup struct {
-	Name    string `toml:"name"`
-	URL     string `toml:"url"`
-	Season  int    `toml:"season"`
-	Offset  int    `toml:"offset"`
-	Filter  string `toml:"filter"`
-	Exclude string `toml:"exclude"`
-	Enabled *bool  `toml:"enabled"`
+	Name         string `toml:"name"`
+	URL          string `toml:"url"`
+	Season       int    `toml:"season"`
+	Offset       int    `toml:"offset"`
+	Filter       string `toml:"filter"`
+	Exclude      string `toml:"exclude"`
+	StartEpisode int    `toml:"start_episode"`
+	Enabled      *bool  `toml:"enabled"`
 }
 
 type TOMLRSSConfig struct {
@@ -417,7 +439,7 @@ func TransformTOMLRSS(tomlRSS []TOMLRSSConfig) map[string][]RssConfig {
 			Subgroups: func() []RssSubgroup {
 				result := make([]RssSubgroup, 0, len(tr.Subgroups))
 				for _, group := range tr.Subgroups {
-					result = append(result, RssSubgroup{Name: group.Name, URL: group.URL, Season: group.Season, Offset: group.Offset, Filter: group.Filter, Exclude: group.Exclude, Enabled: group.Enabled})
+					result = append(result, RssSubgroup{Name: group.Name, URL: group.URL, Season: group.Season, Offset: group.Offset, Filter: group.Filter, Exclude: group.Exclude, StartEpisode: group.StartEpisode, Enabled: group.Enabled})
 				}
 				return result
 			}(),
@@ -517,6 +539,7 @@ type TOMLLabConfig struct {
 	PreferredSubgroups  []string `toml:"preferred_subgroups"`
 	InactiveSubgroups   []string `toml:"inactive_subgroups"`
 	AutoBackupSubgroup  bool     `toml:"auto_backup_subgroup"`
+	AutoBackupFailures  int      `toml:"auto_backup_failures"`
 	AutoApplyRules      bool     `toml:"auto_apply_rules"`
 	HideHints           bool     `toml:"hide_hints"`
 }

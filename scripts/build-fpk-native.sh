@@ -19,7 +19,7 @@ VERSION="$(sed -n 's/^version[[:space:]]*=[[:space:]]*//p' fpk-native/manifest |
 export CGO_ENABLED=1 GOOS=linux GOARCH=amd64
 export CC=musl-gcc
 ${GO:-go} build -trimpath \
-  -ldflags "-s -w -extldflags -static -X github.com/huohen92/anifeed/version.Version=0.02" \
+  -ldflags "-s -w -extldflags -static -X github.com/huohen92/anifeed/version.Version=0.03" \
   -o fpk-native/app/bin/anifeed .
 
 mkdir -p dist

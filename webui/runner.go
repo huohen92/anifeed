@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -215,14 +216,26 @@ func (s *Server) sendTestNotification() error {
 	if cfg == nil || cfg.Notify.Webhook == "" {
 		return fmt.Errorf("尚未配置 Webhook 地址")
 	}
-	payload := notifyPayload{
-		Event:     "test",
-		Title:     "AniFeed 测试通知",
-		Status:    "success",
-		FeedCount: 0,
-		Timestamp: time.Now().Format(time.RFC3339),
+	now := time.Now()
+	template := cfg.Notify.Template
+	if strings.TrimSpace(template) == "" {
+		template = config.DefaultNotifyTemplate()
 	}
-	return postNotification(cfg.Notify, payload)
+	content := renderNotifyTemplate(template, map[string]string{
+		"action": "测试通知", "title": "AniFeed 测试通知", "score": "8.0",
+		"themoviedbName": "AniFeed 测试番剧", "bgmUrl": "https://bgm.tv/subject/1",
+		"season": "1", "episode": "1", "subgroup": "测试字幕组",
+		"currentEpisodeNumber": "1", "totalEpisodeNumber": "12",
+		"year": strconv.Itoa(now.Year()), "month": strconv.Itoa(int(now.Month())), "date": strconv.Itoa(now.Day()),
+		"text": "测试事件", "bgmEpisodeTitle": "第1集",
+	})
+	if !strings.Contains(content, "状态：") {
+		content += "\n状态：成功\n时间：" + now.Format("2006-01-02 15:04")
+	}
+	if err := postRawNotification(cfg.Notify, content); err != nil {
+		return err
+	}
+	return nil
 }
 
 func postNotification(cfg config.NotifyConfig, payload notifyPayload) error {
