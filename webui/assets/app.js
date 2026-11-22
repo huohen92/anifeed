@@ -133,6 +133,7 @@ const PAGE_META = {
   history: { title: '历史记录', subtitle: '', icon: 'history' },
   logs: { title: '运行日志', subtitle: '', icon: 'logs' },
   settings: { title: '设置', subtitle: '', icon: 'settings' },
+  ai: { title: 'AI 助手', subtitle: '查询订阅、任务和运行状态', icon: 'info' },
 };
 
 const state = {
@@ -430,9 +431,26 @@ function initTheme() {
   });
 }
 
+function initMobileKeyboardGuard() {
+  const update = () => {
+    const vv = window.visualViewport;
+    const keyboard = vv ? Math.max(0, window.innerHeight - vv.height - (vv.offsetTop || 0)) : 0;
+    const focused = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    document.body.classList.toggle('keyboard-open', !!focused && keyboard > 120);
+  };
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', update);
+    window.visualViewport.addEventListener('scroll', update);
+  }
+  document.addEventListener('focusin', () => setTimeout(update, 50));
+  document.addEventListener('focusout', () => setTimeout(update, 120));
+  update();
+}
+
 function initChrome() {
   $$('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); });
   initTheme();
+  initMobileKeyboardGuard();
 
   window.addEventListener('hashchange', () => { renderRoute(); });
 
@@ -516,8 +534,64 @@ function renderRoute() {
     case 'history': loadHistoryPage(); break;
     case 'logs': loadLogsPage(); break;
     case 'settings': loadSettingsPage(); break;
+    case 'ai': loadAIPage(); break;
     default: loadDashboard();
   }
+}
+
+function loadAIPage() {
+  const view = $('#view');
+  const welcome = '你好，我可以查询订阅、115 任务、下载历史和运行状态。修改订阅需要二次确认。';
+  if (!state.aiMessages) state.aiMessages = [{ role: 'assistant', content: welcome }];
+  const suggestions = ['现在有哪些订阅？', '最近失败的 115 任务', '最近下载了什么？', '备用 RSS 有哪些？'];
+  const paint = () => {
+    view.innerHTML = `<div class="card ai-page">
+      <div class="card-head ai-head">
+        <div><h3>AI 助手</h3><div class="sub">查询为主；修改和删除操作必须确认</div></div>
+        <div class="field-row"><span class="badge" id="ai-mode">读取中</span><button class="btn btn-sm" id="ai-clear" type="button">清空对话</button><a class="btn btn-sm" href="#/settings">设置</a></div>
+      </div>
+      <div class="ai-messages" id="ai-messages">${state.aiMessages.map(m => `<div class="ai-msg ${m.role}"><div class="ai-role">${m.role === 'user' ? '你' : 'AI'}</div><div class="ai-text">${esc(m.content).replace(/\n/g, '<br>')}</div></div>`).join('')}${state.aiBusy ? '<div class="ai-msg assistant ai-thinking"><span class="spinner"></span> AI 正在思考…</div>' : ''}</div>
+      ${state.aiMessages.length <= 1 ? `<div class="ai-suggest">${suggestions.map(q => `<button type="button" class="btn btn-sm" data-ai-suggest="${esc(q)}">${esc(q)}</button>`).join('')}</div>` : ''}
+      <div class="ai-compose"><textarea class="textarea" id="ai-input" rows="2" placeholder="输入问题，Enter 发送，Shift+Enter 换行" ${state.aiBusy ? 'disabled' : ''}></textarea><button class="btn btn-primary" id="ai-send" ${state.aiBusy ? 'disabled' : ''}>${icon('play')}发送</button></div>
+      <div class="hint">AI 仅使用配置摘要和查询结果；不会读取 Cookie、API Key 或密码。</div>
+    </div>`;
+    const input = $('#ai-input');
+    const send = async () => {
+      const text = input.value.trim(); if (!text || state.aiBusy) return;
+      state.aiMessages.push({ role: 'user', content: text }); input.value = ''; state.aiBusy = true; paint();
+      const box = $('#ai-messages'); if (box) box.scrollTop = box.scrollHeight;
+      const msgs = state.aiMessages.filter(m => m.role === 'user' || m.role === 'assistant').slice(-20);
+      try {
+        const res = await api('/api/ai/chat', { method: 'POST', body: { messages: msgs } });
+        state.aiMessages.push({ role: 'assistant', content: res.reply || '（AI 没有返回内容）' });
+        state.aiBusy = false; paint();
+        if (res.pending) openAIApproval(res.pending);
+      } catch (e) {
+        state.aiMessages.push({ role: 'assistant', content: '请求失败：' + e.message });
+        state.aiBusy = false; paint();
+      }
+    };
+    $('#ai-send').addEventListener('click', send);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+    input.focus();
+    $$('[data-ai-suggest]').forEach(btn => btn.addEventListener('click', () => { input.value = btn.dataset.aiSuggest; input.focus(); }));
+    $('#ai-clear').addEventListener('click', () => { state.aiMessages = [{ role: 'assistant', content: welcome }]; state.aiBusy = false; paint(); });
+    const box = $('#ai-messages'); if (box) box.scrollTop = box.scrollHeight;
+  };
+  paint();
+  api('/api/config').then(r => { const el = $('#ai-mode'); if (el) el.textContent = (r.config.ai && r.config.ai.enabled) ? ((r.config.ai.permission === 'full') ? '完整权限' : '只读') : '未启用'; }).catch(() => {});
+}
+function openAIApproval(pending) {
+  const modal = openModal({
+    title: '确认 AI 操作', subtitle: '该操作会修改配置，请确认',
+    body: `<p>${esc(pending.summary)}</p><div class="notice">${icon('alert')}<span>确认后立即执行，无法自动撤销。</span></div>`,
+    footer: `<button class="btn" data-action="modal-close">取消</button><span class="spacer"></span><button class="btn btn-danger" id="ai-confirm">确认执行</button>`,
+  });
+  modal.el.querySelector('#ai-confirm').addEventListener('click', async () => {
+    modal.close();
+    try { const r = await api('/api/ai/action', { method: 'POST', body: { token: pending.token } }); toast(r.message || '操作已执行', 'success'); await loadSettingsPage(); }
+    catch (e) { toast(e.message, 'error', 5000); }
+  });
 }
 
 function renderFatal(message) {
@@ -553,7 +627,7 @@ async function loadDashboard() {
     api('/api/history?limit=200').then(data => { state.history = data.items || []; }).catch(() => {}),
     api('/api/logs?limit=12').then(data => { state.logs = data.lines || []; }).catch(() => {}),
   ];
-  jobs.push(api('/api/tasks?limit=200').then(data => { state.tasks = data.tasks || []; }).catch(() => { state.tasks = []; }));
+  jobs.push(api('/api/tasks?limit=200').then(data => { state.tasks = data.tasks || []; state.tasksLoaded = true; }).catch(() => { state.tasks = []; }));
   await Promise.allSettled(jobs);
   if (state.history.length) state.historyLoaded = true;
   if (state.routeEpoch !== epoch) return;
@@ -2337,10 +2411,12 @@ function openFeedModal(index, prefill = null) {
           <div class="feed-form-section">
             <div class="feed-form-section-head">季数与集数</div>
             <div class="form-grid">
-              <label class="field"><span>季数</span><input class="input" id="feed-rename-season" type="number" min="0" max="1000" value="${Number(feed.rename_season || 0)}"></label>
+              <label class="field"><span>季数</span><div class="field-row"><input class="input" id="feed-rename-season" type="number" min="0" max="1000" value="${Number(feed.rename_season || 0)}"><button class="btn btn-sm" type="button" id="feed-season-suggest">${icon('refresh')}识别</button></div><span class="hint">留空/0 时自动识别；可手动修改。</span></label>
               <label class="field"><span>集数偏移</span><input class="input" id="feed-rename-offset" type="number" min="-1000" max="1000" value="${Number(feed.rename_offset || 0)}"></label>
               <label class="field"><span>总集数</span><input class="input" id="feed-total-episodes" type="number" min="0" max="10000" value="${Number(feed.total_episodes || 0)}"></label>
             </div>
+            <label class="field span-2"><span>启用自动加入备用 RSS</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="feed-auto-backup" ${feed.auto_backup !== false ? 'checked' : ''}><span></span></span><span>仅对该订阅生效</span><button class="help-dot" type="button" id="feed-auto-backup-help" title="查看说明">?</button></span></label>
+            <label class="field span-2"><span>自动备用 RSS 使用 TMDB 集数偏移</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="feed-auto-offset" ${feed.auto_offset ? 'checked' : ''}><span></span></span><span>TMDB 自动校正</span><button class="help-dot" type="button" id="feed-auto-offset-help" title="查看说明">?</button></span></label>
           </div>
         </section>
 
@@ -2661,7 +2737,43 @@ function openFeedModal(index, prefill = null) {
           markDirty();
         }, () => readFeedForm(el, local));
       });
+      $('#feed-auto-backup-help', el)?.addEventListener('click', () => openModal({
+        title: '自动加入备用 RSS 说明',
+        subtitle: '仅对该订阅生效',
+        body: `<div class="notice">${icon('info')}<span>主 RSS 连续添加失败达到设定次数后，才会检查该订阅的缺失集和喜好字幕组，并尝试添加备用 RSS。全局「自动添加备用字幕组」也必须开启；关闭本开关可单独跳过该订阅。</span></div>`,
+        footer: '<button class="btn btn-primary" data-action="modal-close">知道了</button>',
+      }));
+      $('#feed-auto-offset-help', el)?.addEventListener('click', () => openModal({
+        title: '自动备用 RSS 偏移说明',
+        subtitle: '默认关闭，按需开启',
+        body: `<div class="notice">${icon('info')}<span>若番剧存在分季放送，例如 BGM 第一季 1-13、第二季 14-26，而 TMDB 统一为第一季 1-26，开启该功能后，系统会用 TMDB 分集和发布日期计算备用 RSS 的季数与偏移，提高准确度。</span></div><div class="hint" style="margin-top:10px">需要填写 TMDB ID 和 TMDB API Key；匹配样本不足时会保留 Offset 0。</div>`,
+        footer: '<button class="btn btn-primary" data-action="modal-close">知道了</button>',
+      }));
       $('#feed-item-preview', el).addEventListener('click', () => openItemPreview(readFeedForm(el, local)));
+      const suggestSeason = async () => {
+        const seasonInput = $('#feed-rename-season', el);
+        if (!seasonInput) return;
+        if (Number(seasonInput.value) > 0 && seasonInput.dataset.autofilled !== '1') return;
+        try {
+          const r = await api('/api/feeds/season-suggest', { method: 'POST', body: {
+            name: ($('#feed-name', el) || {}).value || '',
+            url: ($('#feed-url', el) || {}).value || '',
+            tmdb_id: ($('#feed-tmdb-id', el) || {}).value || '',
+          }});
+          if (r.season > 0 && (Number(seasonInput.value) === 0 || seasonInput.dataset.autofilled === '1')) {
+            seasonInput.value = r.season; seasonInput.dataset.autofilled = '1'; markDirty();
+            toast('已识别季数：第 ' + r.season + ' 季', 'success');
+          }
+        } catch { /* 自动识别失败不阻断添加 */ }
+      };
+      let seasonTimer = null;
+      const scheduleSeason = () => { clearTimeout(seasonTimer); seasonTimer = setTimeout(suggestSeason, 500); };
+      $('#feed-url', el)?.addEventListener('change', scheduleSeason);
+      $('#feed-name', el)?.addEventListener('change', scheduleSeason);
+      $('#feed-tmdb-id', el)?.addEventListener('change', scheduleSeason);
+      $('#feed-season-suggest', el)?.addEventListener('click', suggestSeason);
+      $('#feed-rename-season', el)?.addEventListener('input', event => { event.target.dataset.autofilled = ''; });
+      setTimeout(suggestSeason, 300);
       const fillTotalFromTMDB = async (id, type) => {
         const totalInput = $('#feed-total-episodes', el);
         if (!totalInput || Number(totalInput.value) > 0 || !id) return;
@@ -2804,6 +2916,8 @@ function readFeedForm(root, local) {
     rename_season: Number(($('#feed-rename-season', root) || {}).value || 0),
     rename_offset: Number(($('#feed-rename-offset', root) || {}).value || 0),
     total_episodes: Number(($('#feed-total-episodes', root) || {}).value || 0),
+    auto_offset: !!($('#feed-auto-offset', root) || {}).checked,
+    auto_backup: !!($('#feed-auto-backup', root) || {}).checked,
     completed: !!local.completed,
     final_cid: (($('#feed-final-source', root) || {}).value === 'custom') ? (($('#feed-final-cid', root) || {}).value?.trim() || '') : '',
     final_mode: (($('#feed-final-source', root) || {}).value === 'global2') ? 2 : 1,
@@ -3069,15 +3183,16 @@ function renderJob(job, root) {
 /* ================================================================
  * Tasks
  * ================================================================ */
-async function loadTasksPage() {
+async function loadTasksPage(force = false) {
   const epoch = state.routeEpoch;
   if (state.tasksLoaded) {
     renderTasksPage();
+    if (!force) return;
   } else {
     $('#view').innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取 115 离线任务…</span></div>`;
   }
   try {
-    await loadStatus();
+    if (!state.status) await loadStatus();
     if (state.routeEpoch !== epoch) return;
     if (!state.status || !state.status.has_cookies) {
       $('#view').innerHTML = `<div class="card">${emptyBlock('lock', '尚未登录 115',
@@ -3085,7 +3200,7 @@ async function loadTasksPage() {
         `<a class="btn btn-primary" href="#/settings">${icon('login')}去登录</a>`)}</div>`;
       return;
     }
-    const data = await api('/api/tasks?limit=300');
+    const data = await api('/api/tasks?limit=100');
     state.tasks = data.tasks || [];
     state.tasksLoaded = true;
   } catch (err) {
@@ -3132,7 +3247,7 @@ function renderTasksPage() {
       <button class="btn btn-sm btn-danger" data-clear="3">清除失败</button>
     </div>`;
 
-  $('#tasks-refresh').addEventListener('click', loadTasksPage);
+  $('#tasks-refresh').addEventListener('click', () => loadTasksPage(true));
   $('#tasks-add-magnet').addEventListener('click', openMagnetModal);
   $('#task-tabs').addEventListener('click', event => {
     const btn = event.target.closest('[data-task-filter]');
@@ -3227,7 +3342,7 @@ async function clearTasks(type) {
   try {
     await api('/api/tasks/clear', { method: 'POST', body: { type } });
     toast('清理请求已提交', 'success');
-    await loadTasksPage();
+    await loadTasksPage(true);
   } catch (err) {
     toast(err.message, 'error', 5200);
   }
@@ -3444,6 +3559,12 @@ function renderLogsPage() {
       ${mode === 'list' ? '<div class="log-list" id="log-list"></div>' : '<pre class="log-pre" id="log-pre"></pre>'}
     </div>`;
   $('#log-refresh').addEventListener('click', loadLogsPage);
+  $('#log-help')?.addEventListener('click', () => openModal({
+    title: '运行日志说明',
+    subtitle: '用于排查 RSS、115、通知和后处理问题',
+    body: `<div class="kv"><div class="kv-row"><span>信息</span><code>正常运行过程</code></div><div class="kv-row"><span>完成</span><code>通知、任务完成等成功事件</code></div><div class="kv-row"><span>警告</span><code>可继续运行但需要注意的问题</code></div><div class="kv-row"><span>错误</span><code>请求失败、添加失败或后处理异常</code></div></div><div class="hint" style="margin-top:10px">日志按行显示；搜索只过滤当前已加载的日志，不读取历史文件。敏感信息不会显示。</div>`,
+    footer: '<button class="btn btn-primary" data-action="modal-close">知道了</button>',
+  }));
   $('#log-auto').addEventListener('change', event => {
     state.logAuto = event.target.checked;
     if (state.logTimer) { clearInterval(state.logTimer); state.logTimer = null; }
@@ -3547,6 +3668,7 @@ function initSettingsSections() {
   if (!cards.length) return;
   const groupByTitle = {
     '115 账号': 'download',
+    'AI 助手': 'connection',
     '服务与访问': 'connection',
     '默认离线设置': 'download',
     'qBittorrent': 'download',
@@ -3562,7 +3684,7 @@ function initSettingsSections() {
     '关于': 'about',
   };
   const sectionMeta = {
-    connection: ['连接与账号', '115 账号、Web 访问和代理设置'],
+    connection: ['连接与账号', '115 账号、AI 助手、Web 访问和代理设置'],
     download: ['下载器', '115、qBittorrent 的账号、地址和保存设置'],
     organize: ['整理与命名', '重命名、TMDB 关联和洗板'],
     subgroups: ['字幕组', '多字幕组、喜好顺序和自动备用'],
@@ -3740,6 +3862,21 @@ function renderSettingsPage() {
             </div>
             ${restartHint}
           </details>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section-title"><span class="ico">${icon('info')}</span><div><h3>AI 助手</h3><p>DeepSeek 兼容 API，用于查询和受控操作</p></div><span style="margin-left:auto" class="badge ${(cfg.ai || {}).enabled ? 'badge-success' : ''}">${(cfg.ai || {}).enabled ? '已开启' : '未开启'}</span></div>
+        <div class="section-body">
+          <label class="field"><span>启用 AI 助手</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-ai-enabled" ${(cfg.ai || {}).enabled ? 'checked' : ''}><span></span></span><span>启用后可在「AI 助手」页面查询；修改/删除操作需要二次确认</span></span></label>
+          <div class="form-grid">
+            <label class="field"><span>模板</span><select class="select" id="set-ai-provider"><option value="deepseek" selected>DeepSeek</option></select><span class="hint">当前支持 DeepSeek 兼容 Chat Completions API。</span></label>
+            <label class="field"><span>权限</span><select class="select" id="set-ai-permission"><option value="readonly" ${(cfg.ai || {}).permission !== 'full' ? 'selected' : ''}>部分权限（只读）</option><option value="full" ${(cfg.ai || {}).permission === 'full' ? 'selected' : ''}>完整权限（操作需二次确认）</option></select></label>
+            <label class="field span-2"><span>API 地址</span><input class="input mono" id="set-ai-base" value="${esc((cfg.ai || {}).base_url || 'https://api.deepseek.com')}" placeholder="https://api.deepseek.com"></label>
+            <label class="field"><span>模型</span><input class="input mono" id="set-ai-model" value="${esc((cfg.ai || {}).model || 'deepseek-chat')}" placeholder="deepseek-chat"></label>
+            <label class="field"><span>API Key</span><input class="input" id="set-ai-key" type="password" value="${esc((cfg.ai || {}).api_key || '')}" placeholder="sk-..."></label>
+          </div>
+          <div class="notice">${icon('info')}<span>AI 不会直接删除或修改订阅；完整权限下也必须经过页面二次确认。</span></div>
         </div>
       </section>
 
@@ -3964,10 +4101,14 @@ function renderSettingsPage() {
       </section>
 
       <section class="card">
-        <div class="section-title"><span class="ico">${icon('refresh')}</span><div><h3>自动备用字幕组</h3><p>配合摸鱼提醒自动补充字幕组</p></div></div>
+        <div class="section-title"><span class="ico">${icon('refresh')}</span><div><h3>自动备用字幕组</h3><p>主 RSS 连续添加失败后自动补充字幕组</p></div><button class="help-dot" type="button" id="auto-backup-logic-help" title="查看完整逻辑" style="margin-left:auto">?</button></div>
         <div class="section-body">
           <label class="field span-2"><span>自动添加备用字幕组</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-backup" ${(cfg.lab || {}).auto_backup_subgroup ? 'checked' : ''}><span></span></span><span>主 RSS 连续多次添加失败后，自动补充有缺失集数的备用字幕组 RSS</span></span></label>
-          <label class="field"><span>主 RSS 连续添加失败次数</span><input class="input" id="set-lab-auto-backup-failures" type="number" min="1" max="20" value="${Number((cfg.lab || {}).auto_backup_failures || 2)}"><span class="hint">115 失败任务被监控到该次数后触发检查。</span></label>
+          <label class="field"><span>主 RSS 连续添加失败次数</span><input class="input" id="set-lab-auto-backup-failures" type="number" min="1" max="20" value="${Number((cfg.lab || {}).auto_backup_failures || 2)}"><span class="hint">主 RSS 连续添加失败达到该次数后触发检查。</span></label>
+          <label class="field span-2"><span>跳过使用集数偏移的番剧</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-backup-skip-offset" ${(cfg.lab || {}).auto_backup_skip_offset ? 'checked' : ''}><span></span></span><span>主 RSS 已设置集数偏移时不自动添加备用 RSS；备用 RSS 本身按 TMDB 顺序，不需要继承偏移</span></span></label>
+          <label class="field span-2"><span>自动校正备用 RSS 偏移</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-offset" ${(cfg.lab || {}).auto_offset ? 'checked' : ''}><span></span></span><span>用 TMDB 分集 + 发布日期匹配，自动计算备用 RSS 的季数和偏移</span></span></label>
+          <div class="field span-2"><div class="notice">${icon('info')}<span>优先级：先执行「跳过使用集数偏移的番剧」；跳过命中后不会自动添加备用 RSS，也不会计算偏移。未跳过时才由「自动校正备用 RSS 偏移」计算季数和偏移。</span></div></div>
+          <label class="field"><span>偏移匹配样本数</span><div class="field-row"><input class="input" id="set-lab-auto-offset-samples" type="number" min="1" max="20" value="${Number((cfg.lab || {}).auto_offset_samples || 3)}"><button class="help-dot" type="button" id="auto-offset-samples-help" title="查看说明">?</button></div></label>
           <label class="field span-2"><span>自动应用规则</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-apply" ${(cfg.lab || {}).auto_apply_rules ? 'checked' : ''}><span></span></span><span>自动添加的备用字幕组使用自动应用最佳规则</span></span></label>
           <label class="field span-2"><span>显示表单提示</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-hide-hints" ${!(cfg.lab || {}).hide_hints ? 'checked' : ''}><span></span></span><span>关闭后隐藏字段下方说明文字；? / ! 帮助入口仍然保留</span></span></label>
           <div class="notice">${icon('info')}<span>以上为实验性选项，先保存配置；完整执行逻辑会在后续版本接入。</span></div>
@@ -4032,6 +4173,37 @@ function renderSettingsPage() {
     $('#logout-btn').addEventListener('click', logout);
     $('#notify-test').addEventListener('click', testNotification);
 
+    $('#auto-backup-logic-help')?.addEventListener('click', () => openModal({
+      title: '自动备用 RSS 完整逻辑',
+      subtitle: '从失败检测到 Season + Offset',
+      body: `<div class="kv">
+        <div class="kv-row"><span>1. 总开关</span><code>设置中的自动添加备用字幕组</code></div>
+        <div class="kv-row"><span>2. 单订阅</span><code>启用自动加入备用 RSS</code></div>
+        <div class="kv-row"><span>3. 触发</span><code>主 RSS 连续添加 115 失败</code></div>
+        <div class="kv-row"><span>4. 缺失集</span><code>对比历史记录寻找缺失集</code></div>
+        <div class="kv-row"><span>5. 字幕组</span><code>匹配喜好字幕组，且该组近期有缺失集</code></div>
+        <div class="kv-row"><span>6. 编号判断</span><code>按季编号 / 绝对编号；超出季长度时按绝对编号</code></div>
+        <div class="kv-row"><span>7. 季结构</span><code>AniList 季集数 + TMDB 季结构</code></div>
+        <div class="kv-row"><span>8. TMDB 对应季</span><code>直接确定季，Offset 0</code></div>
+        <div class="kv-row"><span>9. TMDB 单季</span><code>AniList 多季时按累计集数计算 Offset</code></div>
+        <div class="kv-row"><span>10. 后备</span><code>无法直接映射时按发布日期匹配 TMDB，优先 ANi 搬运组</code></div>
+        <div class="kv-row"><span>11. 校验</span><code>样本数达到设置值且一致性 ≥60%</code></div>
+        <div class="kv-row"><span>12. 写入</span><code>只写入新添加的备用 RSS，不修改主 RSS/已有备用 RSS</code></div>
+      </div><div class="hint" style="margin-top:10px">「跳过使用集数偏移的番剧」优先级最高；命中后不会添加备用 RSS，也不会执行偏移计算。</div>`,
+      footer: '<button class="btn btn-primary" data-action="modal-close">知道了</button>',
+    }));
+    $('#auto-offset-samples-help')?.addEventListener('click', () => openModal({
+      title: '偏移匹配样本数说明',
+      subtitle: '不是下载次数，也不是重试次数',
+      body: `<div class="notice">${icon('info')}<span>样本数指：有多少条 RSS 条目成功匹配到 TMDB，并且计算出的「TMDB 季 + 偏移」完全一致。</span></div>
+        <div class="kv" style="margin-top:12px">
+          <div class="kv-row"><span>1 条条目</span><code>解析集数 + 发布日期 → 匹配一集 TMDB</code></div>
+          <div class="kv-row"><span>候选偏移</span><code>TMDB 集数 - RSS 集数</code></div>
+          <div class="kv-row"><span>样本</span><code>同一个「季 + 偏移」出现的条目数</code></div>
+        </div>
+        <div class="hint" style="margin-top:10px">示例：4 条 RSS 都得到 Season 1 / Offset +14，则样本数为 4；达到设置值且一致性 ≥60% 后，才会把 Season 和 Offset 写入新添加的备用 RSS。样本不足时仍会添加备用 RSS，但 Offset 保持 0。</div>`,
+      footer: '<button class="btn btn-primary" data-action="modal-close">知道了</button>',
+    }));
     $('#qb-test')?.addEventListener('click', async () => {
       const btn = $('#qb-test'); btn.disabled = true; btn.textContent = '连接中…';
       try { const r = await api('/api/downloaders/qb/test', { method: 'POST', body: {} }); toast('qBittorrent 已连接：' + (r.version || 'OK'), 'success'); }
@@ -4170,7 +4342,7 @@ function renderSitesEditor(focusLast = false) {
   }));
   $$('[data-header-add]', container).forEach((btn, i) => btn.addEventListener('click', () => {
     state.settingsSites[i].headers.push({ key: '', value: '' });
-    cfg.lab = {
+  cfg.lab = {
     multi_subgroup: $('#set-lab-multi-subgroup').checked,
     multi_rss_coexist: $('#set-lab-multi-rss').checked,
     wash_enabled: $('#set-lab-wash').checked,
@@ -4182,6 +4354,9 @@ function renderSitesEditor(focusLast = false) {
     inactive_subgroups: [...(state.labInactive || [])],
     auto_backup_subgroup: $('#set-lab-auto-backup').checked,
     auto_backup_failures: Number($('#set-lab-auto-backup-failures').value || 2),
+    auto_backup_skip_offset: $('#set-lab-auto-backup-skip-offset').checked,
+    auto_offset: $('#set-lab-auto-offset').checked,
+    auto_offset_samples: Number($('#set-lab-auto-offset-samples').value || 3),
     auto_apply_rules: $('#set-lab-auto-apply').checked,
     hide_hints: !$('#set-lab-hide-hints').checked,
   };
@@ -4204,6 +4379,9 @@ function renderSitesEditor(focusLast = false) {
     inactive_subgroups: [...(state.labInactive || [])],
     auto_backup_subgroup: $('#set-lab-auto-backup').checked,
     auto_backup_failures: Number($('#set-lab-auto-backup-failures').value || 2),
+    auto_backup_skip_offset: $('#set-lab-auto-backup-skip-offset').checked,
+    auto_offset: $('#set-lab-auto-offset').checked,
+    auto_offset_samples: Number($('#set-lab-auto-offset-samples').value || 3),
     auto_apply_rules: $('#set-lab-auto-apply').checked,
     hide_hints: !$('#set-lab-hide-hints').checked,
   };
@@ -4465,6 +4643,14 @@ function collectSettings() {
     hourly_enabled: $('#set-notify-hourly').checked,
     hourly_hours: $('#set-notify-hours').value.split(/[,\s，]+/).map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 23),
   };
+  cfg.ai = {
+    enabled: $('#set-ai-enabled').checked,
+    provider: $('#set-ai-provider').value,
+    base_url: $('#set-ai-base').value.trim(),
+    model: $('#set-ai-model').value.trim(),
+    api_key: $('#set-ai-key').value.trim(),
+    permission: $('#set-ai-permission').value,
+  };
   cfg.lab = {
     multi_subgroup: $('#set-lab-multi-subgroup').checked,
     multi_rss_coexist: $('#set-lab-multi-rss').checked,
@@ -4477,6 +4663,9 @@ function collectSettings() {
     inactive_subgroups: [...(state.labInactive || [])],
     auto_backup_subgroup: $('#set-lab-auto-backup').checked,
     auto_backup_failures: Number($('#set-lab-auto-backup-failures').value || 2),
+    auto_backup_skip_offset: $('#set-lab-auto-backup-skip-offset').checked,
+    auto_offset: $('#set-lab-auto-offset').checked,
+    auto_offset_samples: Number($('#set-lab-auto-offset-samples').value || 3),
     auto_apply_rules: $('#set-lab-auto-apply').checked,
     hide_hints: !$('#set-lab-hide-hints').checked,
   };

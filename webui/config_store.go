@@ -118,19 +118,22 @@ type EditableNotify struct {
 
 // EditableLab holds experimental settings.
 type EditableLab struct {
-	MultiSubgroup       bool     `json:"multi_subgroup"`
-	MultiRssCoexist     bool     `json:"multi_rss_coexist"`
-	WashEnabled         bool     `json:"wash_enabled"`
-	WashMode            string   `json:"wash_mode"`
-	WashScheduleEnabled bool     `json:"wash_schedule_enabled"`
-	WashIntervalMinutes int      `json:"wash_interval_minutes"`
-	WashFolders         []string `json:"wash_folders"`
-	PreferredSubgroups  []string `json:"preferred_subgroups"`
-	InactiveSubgroups   []string `json:"inactive_subgroups"`
-	AutoBackupSubgroup  bool     `json:"auto_backup_subgroup"`
-	AutoBackupFailures  int      `json:"auto_backup_failures"`
-	AutoApplyRules      bool     `json:"auto_apply_rules"`
-	HideHints           bool     `json:"hide_hints"`
+	MultiSubgroup        bool     `json:"multi_subgroup"`
+	MultiRssCoexist      bool     `json:"multi_rss_coexist"`
+	WashEnabled          bool     `json:"wash_enabled"`
+	WashMode             string   `json:"wash_mode"`
+	WashScheduleEnabled  bool     `json:"wash_schedule_enabled"`
+	WashIntervalMinutes  int      `json:"wash_interval_minutes"`
+	WashFolders          []string `json:"wash_folders"`
+	PreferredSubgroups   []string `json:"preferred_subgroups"`
+	InactiveSubgroups    []string `json:"inactive_subgroups"`
+	AutoBackupSubgroup   bool     `json:"auto_backup_subgroup"`
+	AutoBackupFailures   int      `json:"auto_backup_failures"`
+	AutoBackupSkipOffset bool     `json:"auto_backup_skip_offset"`
+	AutoOffset           bool     `json:"auto_offset"`
+	AutoOffsetSamples    int      `json:"auto_offset_samples"`
+	AutoApplyRules       bool     `json:"auto_apply_rules"`
+	HideHints            bool     `json:"hide_hints"`
 }
 
 // EditableSubgroup is one extra RSS source for a subscription.
@@ -143,6 +146,16 @@ type EditableSubgroup struct {
 	Exclude      string `json:"exclude"`
 	StartEpisode int    `json:"start_episode"`
 	Enabled      bool   `json:"enabled"`
+}
+
+// EditableAI is the AI assistant configuration.
+type EditableAI struct {
+	Enabled    bool   `json:"enabled"`
+	Provider   string `json:"provider"`
+	BaseURL    string `json:"base_url"`
+	APIKey     string `json:"api_key"`
+	Model      string `json:"model"`
+	Permission string `json:"permission"`
 }
 
 // EditableDownloader is one downloader configuration.
@@ -181,6 +194,8 @@ type EditableRSS struct {
 	Expiration      uint               `json:"expiration"`
 	RenameSeason    int                `json:"rename_season"`
 	RenameOffset    int                `json:"rename_offset"`
+	AutoOffset      bool               `json:"auto_offset"`
+	AutoBackup      bool               `json:"auto_backup"`
 	UpdateWeekday   int                `json:"update_weekday"`
 	TotalEpisodes   int                `json:"total_episodes"`
 	Completed       bool               `json:"completed"`
@@ -211,6 +226,7 @@ type EditableConfig struct {
 	TMDB         EditableTMDB            `json:"tmdb"`
 	Auto         EditableAuto            `json:"auto"`
 	Notify       EditableNotify          `json:"notify"`
+	AI           EditableAI              `json:"ai"`
 	Lab          EditableLab             `json:"lab"`
 	Downloader   EditableDownloaders     `json:"downloader"`
 	RSS          []EditableRSS           `json:"rss"`
@@ -335,19 +351,26 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 			HourlyHours:            append([]int(nil), cfg.Notify.HourlyHours...),
 		},
 		Lab: EditableLab{
-			MultiSubgroup:       cfg.Lab.MultiSubgroup,
-			MultiRssCoexist:     cfg.Lab.MultiRssCoexist,
-			WashEnabled:         cfg.Lab.WashEnabled,
-			WashMode:            cfg.Lab.WashMode,
-			WashScheduleEnabled: cfg.Lab.WashScheduleEnabled,
-			WashIntervalMinutes: cfg.Lab.WashIntervalMinutes,
-			WashFolders:         append([]string(nil), cfg.Lab.WashFolders...),
-			PreferredSubgroups:  append([]string(nil), cfg.Lab.PreferredSubgroups...),
-			InactiveSubgroups:   append([]string(nil), cfg.Lab.InactiveSubgroups...),
-			AutoBackupSubgroup:  cfg.Lab.AutoBackupSubgroup,
-			AutoBackupFailures:  cfg.Lab.AutoBackupFailures,
-			AutoApplyRules:      cfg.Lab.AutoApplyRules,
-			HideHints:           cfg.Lab.HideHints,
+			MultiSubgroup:        cfg.Lab.MultiSubgroup,
+			MultiRssCoexist:      cfg.Lab.MultiRssCoexist,
+			WashEnabled:          cfg.Lab.WashEnabled,
+			WashMode:             cfg.Lab.WashMode,
+			WashScheduleEnabled:  cfg.Lab.WashScheduleEnabled,
+			WashIntervalMinutes:  cfg.Lab.WashIntervalMinutes,
+			WashFolders:          append([]string(nil), cfg.Lab.WashFolders...),
+			PreferredSubgroups:   append([]string(nil), cfg.Lab.PreferredSubgroups...),
+			InactiveSubgroups:    append([]string(nil), cfg.Lab.InactiveSubgroups...),
+			AutoBackupSubgroup:   cfg.Lab.AutoBackupSubgroup,
+			AutoBackupFailures:   cfg.Lab.AutoBackupFailures,
+			AutoBackupSkipOffset: cfg.Lab.AutoBackupSkipOffset,
+			AutoOffset:           cfg.Lab.AutoOffset,
+			AutoOffsetSamples:    cfg.Lab.AutoOffsetSamples,
+			AutoApplyRules:       cfg.Lab.AutoApplyRules,
+			HideHints:            cfg.Lab.HideHints,
+		},
+		AI: EditableAI{
+			Enabled: cfg.AI.Enabled, Provider: cfg.AI.Provider, BaseURL: cfg.AI.BaseURL,
+			APIKey: cfg.AI.APIKey, Model: cfg.AI.Model, Permission: cfg.AI.Permission,
 		},
 		Downloader: EditableDownloaders{
 			Primary115: EditableDownloader{
@@ -408,6 +431,8 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 				Expiration:      rss.Expiration,
 				RenameSeason:    rss.RenameSeason,
 				RenameOffset:    rss.RenameOffset,
+				AutoOffset:      rss.AutoOffset,
+				AutoBackup:      rss.AutoBackup == nil || *rss.AutoBackup,
 				UpdateWeekday:   rss.UpdateWeekday,
 				TotalEpisodes:   rss.TotalEpisodes,
 				Completed:       rss.Completed,
@@ -446,6 +471,8 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 					Expiration:      rss.Expiration,
 					RenameSeason:    rss.RenameSeason,
 					RenameOffset:    rss.RenameOffset,
+					AutoOffset:      rss.AutoOffset,
+					AutoBackup:      rss.AutoBackup == nil || *rss.AutoBackup,
 					UpdateWeekday:   rss.UpdateWeekday,
 					TotalEpisodes:   rss.TotalEpisodes,
 					Completed:       rss.Completed,
@@ -766,6 +793,11 @@ func buildTOMLConfig(ec *EditableConfig, configPath string) (*config.TOMLConfig,
 			HourlyEnabled:          ec.Notify.HourlyEnabled,
 			HourlyHours:            append([]int(nil), ec.Notify.HourlyHours...),
 		},
+		AI: config.TOMLAIConfig{
+			Enabled: ec.AI.Enabled, Provider: strings.TrimSpace(ec.AI.Provider),
+			BaseURL: strings.TrimSpace(ec.AI.BaseURL), APIKey: strings.TrimSpace(ec.AI.APIKey),
+			Model: strings.TrimSpace(ec.AI.Model), Permission: strings.TrimSpace(ec.AI.Permission),
+		},
 		Downloader: config.TOMLDownloadersConfig{
 			Primary115: config.TOMLDownloaderConfig{
 				Enabled: true, OfflineCid: strings.TrimSpace(ec.Downloader.Primary115.OfflineCid),
@@ -783,19 +815,22 @@ func buildTOMLConfig(ec *EditableConfig, configPath string) (*config.TOMLConfig,
 			},
 		},
 		Lab: config.TOMLLabConfig{
-			MultiSubgroup:       ec.Lab.MultiSubgroup,
-			MultiRssCoexist:     ec.Lab.MultiRssCoexist,
-			WashEnabled:         ec.Lab.WashEnabled,
-			WashMode:            ec.Lab.WashMode,
-			WashScheduleEnabled: ec.Lab.WashScheduleEnabled,
-			WashIntervalMinutes: ec.Lab.WashIntervalMinutes,
-			WashFolders:         nonEmptyRules(ec.Lab.WashFolders),
-			PreferredSubgroups:  nonEmptyRules(ec.Lab.PreferredSubgroups),
-			InactiveSubgroups:   nonEmptyRules(ec.Lab.InactiveSubgroups),
-			AutoBackupSubgroup:  ec.Lab.AutoBackupSubgroup,
-			AutoBackupFailures:  ec.Lab.AutoBackupFailures,
-			AutoApplyRules:      ec.Lab.AutoApplyRules,
-			HideHints:           ec.Lab.HideHints,
+			MultiSubgroup:        ec.Lab.MultiSubgroup,
+			MultiRssCoexist:      ec.Lab.MultiRssCoexist,
+			WashEnabled:          ec.Lab.WashEnabled,
+			WashMode:             ec.Lab.WashMode,
+			WashScheduleEnabled:  ec.Lab.WashScheduleEnabled,
+			WashIntervalMinutes:  ec.Lab.WashIntervalMinutes,
+			WashFolders:          nonEmptyRules(ec.Lab.WashFolders),
+			PreferredSubgroups:   nonEmptyRules(ec.Lab.PreferredSubgroups),
+			InactiveSubgroups:    nonEmptyRules(ec.Lab.InactiveSubgroups),
+			AutoBackupSubgroup:   ec.Lab.AutoBackupSubgroup,
+			AutoBackupFailures:   ec.Lab.AutoBackupFailures,
+			AutoBackupSkipOffset: ec.Lab.AutoBackupSkipOffset,
+			AutoOffset:           ec.Lab.AutoOffset,
+			AutoOffsetSamples:    ec.Lab.AutoOffsetSamples,
+			AutoApplyRules:       ec.Lab.AutoApplyRules,
+			HideHints:            ec.Lab.HideHints,
 		},
 		RSS:    make([]config.TOMLRSSConfig, 0, len(ec.RSS)),
 		Sites:  make(map[string]config.TOMLSiteConfig, len(ec.Sites)),
@@ -847,6 +882,8 @@ func buildTOMLConfig(ec *EditableConfig, configPath string) (*config.TOMLConfig,
 			Expiration:    rss.Expiration,
 			RenameSeason:  rss.RenameSeason,
 			RenameOffset:  rss.RenameOffset,
+			AutoOffset:    rss.AutoOffset,
+			AutoBackup:    &rss.AutoBackup,
 			UpdateWeekday: rss.UpdateWeekday,
 			TotalEpisodes: rss.TotalEpisodes,
 			Completed:     rss.Completed,

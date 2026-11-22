@@ -76,7 +76,10 @@ func (s *Server) autoBackupSubgroups(cfg *config.Config, onlyURL string) {
 	for site, feeds := range cfg.RSS {
 		for i := range feeds {
 			feed := &feeds[i]
-			if (onlyURL != "" && feed.Url != onlyURL) || !feed.IsEnabled() || feed.TotalEpisodes <= 0 {
+			if !feed.AutoBackupEnabled() || (onlyURL != "" && feed.Url != onlyURL) || !feed.IsEnabled() || feed.TotalEpisodes <= 0 {
+				continue
+			}
+			if cfg.Lab.AutoBackupSkipOffset && feed.RenameOffset != 0 {
 				continue
 			}
 			source := config.NormalizeSource(feed.Source, feed.Url)
@@ -138,11 +141,27 @@ func (s *Server) autoBackupSubgroups(cfg *config.Config, onlyURL string) {
 					if epErr != nil || episode <= 0 || !missing[int(episode)] {
 						continue
 					}
+					backupSeason := feed.RenameSeason
+					backupOffset := 0
+					mainOffset := feed.RenameOffset
+					if mainOffset == 0 {
+						mainOffset = cfg.Rename.Offset
+					}
+					mainNeedsOffset := mainOffset != 0 || detectSeason(feed.Name) > 1
+					if (feed.AutoOffset || cfg.Lab.AutoOffset) && mainNeedsOffset {
+						if suggestion, err := s.suggestOffset(cfg, feed, group.RSS); err == nil {
+							backupSeason = suggestion.Season
+							backupOffset = suggestion.Offset
+							log.Printf("[auto-offset] %s / %s → TMDB S%02d, offset %+d (%d/%d)", feed.Name, group.Name, suggestion.Season, suggestion.Offset, suggestion.Samples, suggestion.Total)
+						} else {
+							log.Printf("[auto-offset] %s / %s 无法自动判定，保留 offset 0: %v", feed.Name, group.Name, err)
+						}
+					}
 					additions = append(additions, config.RssSubgroup{
 						Name: group.Name, URL: group.RSS, Enabled: ptrBool(true),
 						Filter: "", Exclude: "",
 						StartEpisode: startEpisode,
-						Season:       feed.RenameSeason, Offset: feed.RenameOffset,
+						Season:       backupSeason, Offset: backupOffset,
 					})
 					break
 				}

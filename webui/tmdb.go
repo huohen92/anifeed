@@ -243,3 +243,11 @@ func parseTMDBID(raw string) int {
 	value, _ := strconv.Atoi(strings.TrimSpace(raw))
 	return value
 }
+
+func (s *Server) fetchTMDBQuery(cfg *config.Config, path string, values map[string]string, dst any) error {
+	v := url.Values{}
+	for key, value := range values {
+		v.Set(key, value)
+	}
+	return s.fetchTMDB(cfg.TMDB, path, v, dst)
+}

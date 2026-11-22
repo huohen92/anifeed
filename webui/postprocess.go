@@ -102,13 +102,45 @@ func renameSeasonForFeedTitle(cfg *config.Config, name, feedURL, title string) i
 	return season
 }
 
+func parseChineseNumber(value string) int {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	digits := map[rune]int{'零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
+	total, current := 0, 0
+	for _, r := range value {
+		switch r {
+		case '十':
+			if current == 0 {
+				current = 1
+			}
+			total += current * 10
+			current = 0
+		case '百':
+			if current == 0 {
+				current = 1
+			}
+			total += current * 100
+			current = 0
+		default:
+			if d, ok := digits[r]; ok {
+				current = d
+			} else {
+				return 0
+			}
+		}
+	}
+	return total + current
+}
+
 func detectSeason(text string) int {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return 0
 	}
 	if match := chineseSeasonPattern.FindStringSubmatch(text); len(match) == 2 {
-		if value, ok := chineseSeasons[match[1]]; ok {
+		if value := parseChineseNumber(match[1]); value > 0 {
 			return value
 		}
 		if value, err := strconv.Atoi(match[1]); err == nil && value > 0 {

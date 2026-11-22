@@ -235,6 +235,16 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 	b.WriteString("]\n")
 	b.WriteString("\n")
 
+	// [ai]
+	b.WriteString("[ai]\n")
+	writeKV(&b, "enabled", strconv.FormatBool(cfg.AI.Enabled))
+	writeKV(&b, "provider", quote(cfg.AI.Provider))
+	writeKV(&b, "base_url", quote(cfg.AI.BaseURL))
+	writeKV(&b, "api_key", quote(cfg.AI.APIKey))
+	writeKV(&b, "model", quote(cfg.AI.Model))
+	writeKV(&b, "permission", quote(cfg.AI.Permission))
+	b.WriteString("\n")
+
 	// [lab]
 	b.WriteString("[lab]\n")
 	writeKV(&b, "multi_subgroup", strconv.FormatBool(cfg.Lab.MultiSubgroup))
@@ -263,6 +273,13 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 		failures = 2
 	}
 	writeKV(&b, "auto_backup_failures", strconv.Itoa(failures))
+	writeKV(&b, "auto_backup_skip_offset", strconv.FormatBool(cfg.Lab.AutoBackupSkipOffset))
+	writeKV(&b, "auto_offset", strconv.FormatBool(cfg.Lab.AutoOffset))
+	samples := cfg.Lab.AutoOffsetSamples
+	if samples <= 0 {
+		samples = 3
+	}
+	writeKV(&b, "auto_offset_samples", strconv.Itoa(samples))
 	writeKV(&b, "auto_apply_rules", strconv.FormatBool(cfg.Lab.AutoApplyRules))
 	b.WriteString("\n")
 
@@ -336,6 +353,12 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 				b.WriteString(fmt.Sprintf("{name=%s,url=%s,season=%d,offset=%d,filter=%s,exclude=%s,start_episode=%d,enabled=%t}", quote(group.Name), quote(group.URL), group.Season, group.Offset, quote(group.Filter), quote(group.Exclude), group.StartEpisode, enabled))
 			}
 			b.WriteString("]\n")
+		}
+		if rss.AutoOffset {
+			writeKV(&b, "auto_offset", "true")
+		}
+		if rss.AutoBackup != nil && !*rss.AutoBackup {
+			writeKV(&b, "auto_backup", "false")
 		}
 		if rss.TmdbID != "" {
 			writeKV(&b, "tmdb_id", quote(rss.TmdbID))

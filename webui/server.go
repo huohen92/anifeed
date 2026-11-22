@@ -82,6 +82,8 @@ type Server struct {
 	backupMu        sync.Mutex
 	backupFailures  map[string]int
 	backupTriggered map[string]bool
+	aiMu            sync.Mutex
+	aiPending       map[string]aiPendingAction
 	startedAt       time.Time
 	httpSrv         *http.Server
 	versionText     string
@@ -175,6 +177,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /add", s.handleLegacyAdd)
 
 	mux.HandleFunc("/api/downloaders/qb/test", s.handleQBTest)
+	mux.HandleFunc("/api/ai/chat", s.handleAIChat)
+	mux.HandleFunc("/api/feeds/offset-suggest", s.handleOffsetSuggest)
+	mux.HandleFunc("/api/feeds/season-suggest", s.handleSeasonSuggest)
+	mux.HandleFunc("/api/ai/action", s.handleAIAction)
 
 	mux.Handle("/", staticHandler())
 	return s.withSecurity(s.withAuth(mux))

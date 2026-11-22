@@ -27,5 +27,6 @@ func (d *Dmhy) GetMagnetItem(item *gofeed.Item) MagnetItem {
 		Magnet:      d.GetMagnet(item),
 		Description: item.Description,
 		Content:     item.Content,
+		Published:   itemPublished(item),
 	}
 }

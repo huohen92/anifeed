@@ -69,7 +69,7 @@ go build -o anifeed .
 镜像：
 
 ```text
-huohen92/anifeed:0.03
+huohen92/anifeed:0.03.1
 huohen92/anifeed:latest
 ```
 
@@ -84,7 +84,7 @@ https://hub.docker.com/r/huohen92/anifeed
 #### 直接拉取运行
 
 ```bash
-docker pull huohen92/anifeed:0.03
+docker pull huohen92/anifeed:0.03.1
 
 mkdir -p data
 
@@ -94,7 +94,7 @@ docker run -d \
   -p 80:80 \
   -v "$PWD/data:/data" \
   -e TZ=Asia/Shanghai \
-  huohen92/anifeed:0.03
+  huohen92/anifeed:0.03.1
 ```
 
 打开：
@@ -134,7 +134,7 @@ data/db.sqlite
 ```yaml
 services:
   anifeed:
-    image: huohen92/anifeed:0.03
+    image: huohen92/anifeed:0.03.1
     container_name: anifeed
     restart: unless-stopped
     ports:
@@ -172,13 +172,13 @@ docker compose up -d --build
 原生包不需要 Docker，直接运行静态二进制：
 
 ```text
-https://github.com/huohen92/anifeed/releases/download/v0.03/AniFeed-0.3.0-x86-native.fpk
+https://github.com/huohen92/anifeed/releases/download/v0.03.1/AniFeed-0.3.1-x86-native.fpk
 ```
 
 安装：
 
 ```text
-fnOS 应用中心 → 手动安装 → 选择 AniFeed-0.3.0-x86-native.fpk
+fnOS 应用中心 → 手动安装 → 选择 AniFeed-0.3.1-x86-native.fpk
 ```
 
 说明：
@@ -200,7 +200,7 @@ SHA256：
 ```bash
 # 需要 fnpack 和 musl-gcc
 ./scripts/build-fpk-native.sh
-# 输出：dist/AniFeed-0.3.0-x86-native.fpk
+# 输出：dist/AniFeed-0.3.1-x86-native.fpk
 ```
 
 FPK 源文件位于 [`fpk-native/`](./fpk-native)。
@@ -208,13 +208,13 @@ FPK 源文件位于 [`fpk-native/`](./fpk-native)。
 #### Docker 版（备选）
 
 ```text
-https://github.com/huohen92/anifeed/releases/download/v0.03/anifeed-0.3.0-x86.fpk
+https://github.com/huohen92/anifeed/releases/download/v0.03.1/anifeed-0.3.1-x86.fpk
 ```
 
 适合希望使用容器隔离，或已经在 fnOS 上启用 Docker 的用户。
 
 - 需要 fnOS 已安装 Docker
-- 容器镜像：`huohen92/anifeed:0.03`
+- 容器镜像：`huohen92/anifeed:0.03.1`
 - 应用端口：`80`
 
 FPK 源文件位于 [`fpk/`](./fpk)。

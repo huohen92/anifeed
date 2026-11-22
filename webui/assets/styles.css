@@ -1622,3 +1622,87 @@ body.hide-hints .hint { display: none !important; }
   .settings-section-intro { display: block; }
   .settings-section-intro span { display: block; margin-top: 2px; }
 }
+
+/* ---------- AI assistant ---------- */
+.ai-page { max-width: 900px; }
+.ai-messages { max-height: 58vh; overflow: auto; padding: 8px 2px; }
+.ai-msg { margin: 8px 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); }
+.ai-msg.user { margin-left: 12%; background: var(--primary-soft); border-color: var(--primary-border); }
+.ai-msg.assistant { margin-right: 12%; }
+.ai-role { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+.ai-text { font-size: 12.5px; line-height: 1.65; color: var(--text); word-break: break-word; }
+.ai-compose { display: flex; gap: 8px; align-items: flex-end; margin-top: 8px; }
+.ai-compose .textarea { flex: 1; min-height: 52px; resize: vertical; }
+@media (max-width: 700px) {
+  .ai-msg.user { margin-left: 8%; }
+  .ai-msg.assistant { margin-right: 8%; }
+  .ai-compose { align-items: stretch; }
+}
+
+/* AI chat refinements */
+.ai-head { align-items: flex-start; flex-wrap: wrap; }
+.ai-head .field-row { gap: 6px; flex-wrap: wrap; }
+.ai-messages { min-height: 280px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
+.ai-msg { box-shadow: var(--shadow-sm); }
+.ai-msg.user { color: var(--text); }
+.ai-thinking { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.ai-suggest { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 0 2px; }
+.ai-suggest .btn { font-size: 10px; height: 28px; }
+.ai-compose { position: sticky; bottom: 0; background: var(--surface); padding-top: 8px; }
+.ai-compose .btn { height: 42px; flex: none; }
+@media (max-width: 700px) {
+  .ai-messages { min-height: 300px; max-height: 56vh; padding: 8px; }
+  .ai-head .field-row { width: 100%; justify-content: flex-end; }
+  .ai-compose { gap: 6px; }
+  .ai-compose .btn { padding: 0 12px; }
+}
+
+/* Keep the mobile tab bar out of the keyboard area. */
+@media (max-width: 700px) {
+  body.keyboard-open .mobile-tabs,
+  body:has(input:focus) .mobile-tabs,
+  body:has(textarea:focus) .mobile-tabs,
+  body:has(select:focus) .mobile-tabs {
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+}
+
+/* Compact AI chat layout */
+.ai-page { display: flex; flex-direction: column; height: calc(100vh - 180px); min-height: 500px; max-width: 920px; padding: 14px 16px; overflow: hidden; }
+.ai-head { flex: none; margin: 0 0 6px; padding: 0 0 8px; border-bottom: 1px solid var(--border); }
+.ai-head h3 { margin: 0; font-size: 16px; }
+.ai-head .sub { margin-top: 2px; }
+.ai-messages { flex: 1 1 auto; min-height: 0; max-height: none; margin: 0; padding: 8px; overflow-y: auto; }
+.ai-msg { margin: 5px 0; padding: 8px 10px; border-radius: 9px; }
+.ai-msg.user { margin-left: 18%; }
+.ai-msg.assistant { margin-right: 8%; }
+.ai-role { margin-bottom: 2px; font-size: 9px; }
+.ai-text { line-height: 1.55; }
+.ai-suggest { flex: none; padding: 7px 0 3px; gap: 5px; }
+.ai-suggest .btn { height: 26px; font-size: 10px; }
+.ai-compose { flex: none; position: static; padding: 7px 0 0; margin: 0; border-top: 1px solid var(--border); }
+.ai-compose .textarea { min-height: 46px; max-height: 120px; }
+.ai-compose .btn { height: 38px; }
+.ai-page > .hint { flex: none; margin: 5px 0 0; font-size: 10px; }
+@media (max-width: 700px) {
+  .ai-page { height: calc(100dvh - 155px); min-height: 0; padding: 10px; }
+  .ai-messages { padding: 6px; }
+  .ai-msg.user { margin-left: 12%; }
+  .ai-msg.assistant { margin-right: 2%; }
+  .ai-suggest { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 5px; }
+  .ai-suggest .btn { flex: none; }
+  .ai-head .sub { max-width: 210px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* Log page hint */
+.log-hint { display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-bottom: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font-size: 10.5px; }
+.log-hint .help-dot { flex: none; }
+
+.log-hint svg { width: 14px; height: 14px; flex: none; }
+.log-hint > span { flex: 1; min-width: 0; }
+
+/* Log page fills the available content area. */
+.log-box { display: flex; flex-direction: column; height: calc(100vh - 165px); min-height: 420px; }
+.log-list, .log-pre { flex: 1 1 auto; max-height: none; min-height: 0; }
+@media (max-width: 700px) { .log-box { height: calc(100dvh - 180px); min-height: 300px; } }

@@ -6,6 +6,7 @@ import (
 	urlPkg "net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/dlclark/regexp2"
 
@@ -21,11 +22,12 @@ type MagnetSite interface {
 }
 
 type MagnetItem struct {
-	Title       string `json:"title"`
-	Link        string `json:"link"`
-	Magnet      string `json:"magnet"`
-	Description string `json:"description"`
-	Content     string `json:"content"`
+	Title       string    `json:"title"`
+	Link        string    `json:"link"`
+	Magnet      string    `json:"magnet"`
+	Description string    `json:"description"`
+	Content     string    `json:"content"`
+	Published   time.Time `json:"published,omitempty"`
 }
 
 func getSiteForConfig(config *RssConfig) MagnetSite {
@@ -331,4 +333,19 @@ func GetMagnetByEnclosure(item *gofeed.Item) string {
 		}
 	}
 	return ""
+}
+
+func itemPublished(item *gofeed.Item) time.Time {
+	if item == nil {
+		return time.Time{}
+	}
+	if item.PublishedParsed != nil {
+		return *item.PublishedParsed
+	}
+	for _, layout := range []string{time.RFC1123Z, time.RFC1123, time.RFC3339, "2006-01-02 15:04:05"} {
+		if t, err := time.Parse(layout, strings.TrimSpace(item.Published)); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }

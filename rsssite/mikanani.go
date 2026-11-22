@@ -24,5 +24,6 @@ func (m *Mikanani) GetMagnetItem(item *gofeed.Item) MagnetItem {
 		Magnet:      m.GetMagnet(item),
 		Description: item.Description,
 		Content:     item.Content,
+		Published:   itemPublished(item),
 	}
 }

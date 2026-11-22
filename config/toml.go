@@ -25,8 +25,9 @@ type TOMLConfig struct {
 	TMDB         TOMLTMDBConfig            `toml:"tmdb"`
 	Auto         TOMLAutoConfig            `toml:"auto"`
 	Notify       TOMLNotifyConfig          `toml:"notify"`
-	Lab          TOMLLabConfig             `toml:"lab"`
+	AI           TOMLAIConfig              `toml:"ai"`
 	Downloader   TOMLDownloadersConfig     `toml:"downloader"`
+	Lab          TOMLLabConfig             `toml:"lab"`
 	RSS          []TOMLRSSConfig           `toml:"rss"`
 	Sites        map[string]TOMLSiteConfig `toml:"sites"`
 	Compat       TOMLCompatConfig          `toml:"compat"`
@@ -61,7 +62,7 @@ type TOMLOfflineConfig struct {
 	AutoRules            bool     `toml:"auto_rules"`
 }
 
-// TOMLDownloadersConfig holds the 115 primary and qBittorrent auxiliary downloaders.
+// TOMLDownloadersConfig holds downloader settings.
 type TOMLDownloadersConfig struct {
 	Primary115  TOMLDownloaderConfig `toml:"primary_115"`
 	QBittorrent TOMLDownloaderConfig `toml:"qbittorrent"`
@@ -79,6 +80,16 @@ type TOMLDownloaderConfig struct {
 	Username          string `toml:"username"`
 	Password          string `toml:"password"`
 	Category          string `toml:"category"`
+}
+
+// TOMLAIConfig holds the optional AI assistant settings.
+type TOMLAIConfig struct {
+	Enabled    bool   `toml:"enabled"`
+	Provider   string `toml:"provider"`
+	BaseURL    string `toml:"base_url"`
+	APIKey     string `toml:"api_key"`
+	Model      string `toml:"model"`
+	Permission string `toml:"permission"`
 }
 
 // TOMLTMDBConfig holds TMDB API settings.
@@ -190,6 +201,8 @@ type TOMLRSSConfig struct {
 	Expiration      uint              `toml:"expiration"`     // Optional: cache expiration
 	RenameSeason    int               `toml:"rename_season"`  // Optional: per-feed rename season
 	RenameOffset    int               `toml:"rename_offset"`  // Optional: per-feed episode offset
+	AutoOffset      bool              `toml:"auto_offset"`    // Optional: TMDB offset for auto backup
+	AutoBackup      *bool             `toml:"auto_backup"`    // Optional: allow auto backup RSS (default true)
 	UpdateWeekday   int               `toml:"update_weekday"` // Optional: 1=Monday ... 7=Sunday
 	TotalEpisodes   int               `toml:"total_episodes"` // Optional: total episodes for completion
 	Completed       bool              `toml:"completed"`
@@ -430,6 +443,8 @@ func TransformTOMLRSS(tomlRSS []TOMLRSSConfig) map[string][]RssConfig {
 			Expiration:      tr.Expiration,
 			RenameSeason:    tr.RenameSeason,
 			RenameOffset:    tr.RenameOffset,
+			AutoOffset:      tr.AutoOffset,
+			AutoBackup:      tr.AutoBackup,
 			UpdateWeekday:   tr.UpdateWeekday,
 			TotalEpisodes:   tr.TotalEpisodes,
 			Completed:       tr.Completed,
@@ -529,17 +544,20 @@ func ResolveDatabasePath(dbPath string, tomlPath string) string {
 
 // TOMLLabConfig holds experimental options.
 type TOMLLabConfig struct {
-	MultiSubgroup       bool     `toml:"multi_subgroup"`
-	MultiRssCoexist     bool     `toml:"multi_rss_coexist"`
-	WashEnabled         bool     `toml:"wash_enabled"`
-	WashMode            string   `toml:"wash_mode"`
-	WashScheduleEnabled bool     `toml:"wash_schedule_enabled"`
-	WashIntervalMinutes int      `toml:"wash_interval_minutes"`
-	WashFolders         []string `toml:"wash_folders"`
-	PreferredSubgroups  []string `toml:"preferred_subgroups"`
-	InactiveSubgroups   []string `toml:"inactive_subgroups"`
-	AutoBackupSubgroup  bool     `toml:"auto_backup_subgroup"`
-	AutoBackupFailures  int      `toml:"auto_backup_failures"`
-	AutoApplyRules      bool     `toml:"auto_apply_rules"`
-	HideHints           bool     `toml:"hide_hints"`
+	MultiSubgroup        bool     `toml:"multi_subgroup"`
+	MultiRssCoexist      bool     `toml:"multi_rss_coexist"`
+	WashEnabled          bool     `toml:"wash_enabled"`
+	WashMode             string   `toml:"wash_mode"`
+	WashScheduleEnabled  bool     `toml:"wash_schedule_enabled"`
+	WashIntervalMinutes  int      `toml:"wash_interval_minutes"`
+	WashFolders          []string `toml:"wash_folders"`
+	PreferredSubgroups   []string `toml:"preferred_subgroups"`
+	InactiveSubgroups    []string `toml:"inactive_subgroups"`
+	AutoBackupSubgroup   bool     `toml:"auto_backup_subgroup"`
+	AutoBackupFailures   int      `toml:"auto_backup_failures"`
+	AutoBackupSkipOffset bool     `toml:"auto_backup_skip_offset"`
+	AutoOffset           bool     `toml:"auto_offset"`
+	AutoOffsetSamples    int      `toml:"auto_offset_samples"`
+	AutoApplyRules       bool     `toml:"auto_apply_rules"`
+	HideHints            bool     `toml:"hide_hints"`
 }

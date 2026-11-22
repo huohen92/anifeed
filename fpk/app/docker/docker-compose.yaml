@@ -1,6 +1,6 @@
 services:
   anifeed:
-    image: huohen92/anifeed:0.03
+    image: huohen92/anifeed:0.03.1
     container_name: anifeed
     restart: unless-stopped
     ports:

@@ -29,5 +29,6 @@ func (n *Nyaa) GetMagnetItem(item *gofeed.Item) MagnetItem {
 		Magnet:      n.GetMagnet(item),
 		Description: item.Description,
 		Content:     item.Content,
+		Published:   itemPublished(item),
 	}
 }

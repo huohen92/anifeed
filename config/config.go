@@ -35,6 +35,8 @@ type RssConfig struct {
 	Filter          string        `json:"filter,omitempty"`
 	Exclude         string        `json:"exclude,omitempty"`
 	StartEpisode    int           `json:"start_episode,omitempty"`
+	AutoOffset      bool          `json:"auto_offset,omitempty"`
+	AutoBackup      *bool         `json:"auto_backup,omitempty"`
 	Expiration      uint          `json:"expiration,omitempty"`
 	RenameSeason    int           `json:"rename_season,omitempty"`
 	RenameOffset    int           `json:"rename_offset,omitempty"`
@@ -53,6 +55,12 @@ type RssConfig struct {
 // Missing enabled fields default to true for backward compatibility.
 func (r RssConfig) IsEnabled() bool {
 	return r.Enabled == nil || *r.Enabled
+}
+
+// AutoBackupEnabled reports whether this feed may auto-add backup RSS.
+// Missing values default to true for backwards compatibility.
+func (r RssConfig) AutoBackupEnabled() bool {
+	return r.AutoBackup == nil || *r.AutoBackup
 }
 
 // SiteConfig represents site-specific HTTP configuration (local copy to avoid circular dependency)
@@ -83,6 +91,7 @@ type Config struct {
 	TMDB         TMDBConfig
 	Auto         AutoConfig
 	Notify       NotifyConfig
+	AI           AIConfig
 	Lab          LabConfig
 	Downloaders  DownloadersConfig
 	RSS          map[string][]RssConfig // Keyed by site host
@@ -108,6 +117,16 @@ type DownloaderConfig struct {
 type DownloadersConfig struct {
 	Primary115  DownloaderConfig
 	QBittorrent DownloaderConfig
+}
+
+// AIConfig controls the optional AI assistant.
+type AIConfig struct {
+	Enabled    bool
+	Provider   string
+	BaseURL    string
+	APIKey     string
+	Model      string
+	Permission string
 }
 
 // AuthConfig represents authentication configuration
@@ -447,6 +466,23 @@ func Resolve(cli CLIParams, toml *TOMLConfig, tomlPath string, legacy *LegacyCon
 		cfg.Notify.SkipNoChange = toml.Notify.SkipNoChange
 		cfg.Notify.HourlyEnabled = toml.Notify.HourlyEnabled
 		cfg.Notify.HourlyHours = normalizeHours(toml.Notify.HourlyHours)
+		cfg.AI = AIConfig{
+			Enabled: toml.AI.Enabled, Provider: strings.TrimSpace(toml.AI.Provider),
+			BaseURL: strings.TrimSpace(toml.AI.BaseURL), APIKey: strings.TrimSpace(toml.AI.APIKey),
+			Model: strings.TrimSpace(toml.AI.Model), Permission: strings.TrimSpace(toml.AI.Permission),
+		}
+		if cfg.AI.Provider == "" {
+			cfg.AI.Provider = "deepseek"
+		}
+		if cfg.AI.BaseURL == "" {
+			cfg.AI.BaseURL = "https://api.deepseek.com"
+		}
+		if cfg.AI.Model == "" {
+			cfg.AI.Model = "deepseek-chat"
+		}
+		if cfg.AI.Permission != "full" {
+			cfg.AI.Permission = "readonly"
+		}
 		cfg.Lab = LabConfig{
 			MultiSubgroup:       toml.Lab.MultiSubgroup,
 			MultiRssCoexist:     toml.Lab.MultiRssCoexist,
@@ -459,16 +495,22 @@ func Resolve(cli CLIParams, toml *TOMLConfig, tomlPath string, legacy *LegacyCon
 				}
 				return 1440
 			}(),
-			WashFolders:        append([]string(nil), toml.Lab.WashFolders...),
-			PreferredSubgroups: append([]string(nil), toml.Lab.PreferredSubgroups...),
-			InactiveSubgroups:  append([]string(nil), toml.Lab.InactiveSubgroups...),
-			AutoBackupSubgroup: toml.Lab.AutoBackupSubgroup,
-			AutoBackupFailures: toml.Lab.AutoBackupFailures,
-			AutoApplyRules:     toml.Lab.AutoApplyRules,
-			HideHints:          toml.Lab.HideHints,
+			WashFolders:          append([]string(nil), toml.Lab.WashFolders...),
+			PreferredSubgroups:   append([]string(nil), toml.Lab.PreferredSubgroups...),
+			InactiveSubgroups:    append([]string(nil), toml.Lab.InactiveSubgroups...),
+			AutoBackupSubgroup:   toml.Lab.AutoBackupSubgroup,
+			AutoBackupFailures:   toml.Lab.AutoBackupFailures,
+			AutoBackupSkipOffset: toml.Lab.AutoBackupSkipOffset,
+			AutoOffset:           toml.Lab.AutoOffset,
+			AutoOffsetSamples:    toml.Lab.AutoOffsetSamples,
+			AutoApplyRules:       toml.Lab.AutoApplyRules,
+			HideHints:            toml.Lab.HideHints,
 		}
 		if cfg.Lab.AutoBackupFailures <= 0 {
 			cfg.Lab.AutoBackupFailures = 2
+		}
+		if cfg.Lab.AutoOffsetSamples <= 0 {
+			cfg.Lab.AutoOffsetSamples = 3
 		}
 	}
 

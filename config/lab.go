@@ -3,19 +3,22 @@ package config
 // LabConfig holds experimental options. These settings are persisted before
 // their full runtime behaviour is enabled.
 type LabConfig struct {
-	MultiSubgroup       bool
-	MultiRssCoexist     bool
-	WashEnabled         bool
-	WashMode            string
-	WashFolders         []string
-	WashScheduleEnabled bool
-	WashIntervalMinutes int
-	PreferredSubgroups  []string
-	InactiveSubgroups   []string
-	AutoBackupSubgroup  bool
-	AutoBackupFailures  int
-	AutoApplyRules      bool
-	HideHints           bool
+	MultiSubgroup        bool
+	MultiRssCoexist      bool
+	WashEnabled          bool
+	WashMode             string
+	WashFolders          []string
+	WashScheduleEnabled  bool
+	WashIntervalMinutes  int
+	PreferredSubgroups   []string
+	InactiveSubgroups    []string
+	AutoBackupSubgroup   bool
+	AutoBackupFailures   int
+	AutoBackupSkipOffset bool
+	AutoOffset           bool
+	AutoOffsetSamples    int
+	AutoApplyRules       bool
+	HideHints            bool
 }
 
 // DefaultLabConfig returns safe defaults for experimental features.

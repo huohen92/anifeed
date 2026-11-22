@@ -19,5 +19,6 @@ func (a *Acgnx) GetMagnetItem(item *gofeed.Item) MagnetItem {
 		Magnet:      a.GetMagnet(item),
 		Description: item.Description,
 		Content:     item.Content,
+		Published:   itemPublished(item),
 	}
 }

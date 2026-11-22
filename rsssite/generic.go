@@ -61,5 +61,6 @@ func (g *Generic) GetMagnetItem(item *gofeed.Item) MagnetItem {
 		Magnet:      g.GetMagnet(item),
 		Description: item.Description,
 		Content:     item.Content,
+		Published:   itemPublished(item),
 	}
 }

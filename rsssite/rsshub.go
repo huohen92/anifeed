@@ -18,5 +18,6 @@ func (r *Rsshub) GetMagnetItem(item *gofeed.Item) MagnetItem {
 		Magnet:      r.GetMagnet(item),
 		Description: item.Description,
 		Content:     item.Content,
+		Published:   itemPublished(item),
 	}
 }
