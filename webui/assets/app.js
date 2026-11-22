@@ -573,8 +573,7 @@ function loadAIPage() {
     };
     $('#ai-send').addEventListener('click', send);
     input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
-    input.focus();
-    $$('[data-ai-suggest]').forEach(btn => btn.addEventListener('click', () => { input.value = btn.dataset.aiSuggest; input.focus(); }));
+    $$('[data-ai-suggest]').forEach(btn => btn.addEventListener('click', () => { input.value = btn.dataset.aiSuggest; }));
     $('#ai-clear').addEventListener('click', () => { state.aiMessages = [{ role: 'assistant', content: welcome }]; state.aiBusy = false; paint(); });
     const box = $('#ai-messages'); if (box) box.scrollTop = box.scrollHeight;
   };

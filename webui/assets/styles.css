@@ -1659,10 +1659,7 @@ body.hide-hints .hint { display: none !important; }
 
 /* Keep the mobile tab bar out of the keyboard area. */
 @media (max-width: 700px) {
-  body.keyboard-open .mobile-tabs,
-  body:has(input:focus) .mobile-tabs,
-  body:has(textarea:focus) .mobile-tabs,
-  body:has(select:focus) .mobile-tabs {
+  body.keyboard-open .mobile-tabs {
     visibility: hidden !important;
     pointer-events: none !important;
   }
