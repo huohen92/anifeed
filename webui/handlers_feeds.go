@@ -26,6 +26,8 @@ type feedPayload struct {
 	Expiration      uint                  `json:"expiration"`
 	RenameSeason    int                   `json:"rename_season"`
 	RenameOffset    int                   `json:"rename_offset"`
+	AutoOffset      bool                  `json:"auto_offset"`
+	AutoBackup      bool                  `json:"auto_backup"`
 	UpdateWeekday   int                   `json:"update_weekday"`
 	TotalEpisodes   int                   `json:"total_episodes"`
 	Completed       bool                  `json:"completed"`
