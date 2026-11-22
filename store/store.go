@@ -750,3 +750,27 @@ func (s *Store) FinishedEntries() ([]FinishedEntry, error) {
 	}
 	return result, rows.Err()
 }
+
+// DeleteHistoryForFeed removes submission history for one RSS feed.
+func (s *Store) DeleteHistoryForFeed(name, rawURL string) (int64, error) {
+	name = strings.TrimSpace(name)
+	rawURL = strings.TrimSpace(rawURL)
+	if name == "" && rawURL == "" {
+		return 0, nil
+	}
+	query := "DELETE FROM rss_items WHERE 1=1"
+	var args []any
+	if name != "" {
+		query += " AND configName = ?"
+		args = append(args, name)
+	}
+	if rawURL != "" {
+		query += " OR configUrl = ?"
+		args = append(args, rawURL)
+	}
+	res, err := s.DBInstance.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}

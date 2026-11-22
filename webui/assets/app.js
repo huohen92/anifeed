@@ -2465,6 +2465,7 @@ function openFeedModal(index, prefill = null) {
         <button class="btn btn-soft" type="button" id="feed-action-run">${icon('play')}运行订阅</button>
         <button class="btn" type="button" id="feed-action-copy">${icon('link')}复制 RSS</button>
         <button class="btn" type="button" id="feed-action-toggle">${feed.enabled === false ? '启用订阅' : '禁用订阅'}</button>
+        <button class="btn" type="button" id="feed-action-reset">重置为未完成</button>
         <span class="spacer"></span>
         <button class="btn btn-danger" type="button" id="feed-action-delete">${icon('trash')}删除订阅</button>
       </div>` : ''}`,
@@ -2477,6 +2478,27 @@ function openFeedModal(index, prefill = null) {
         $('#feed-action-copy', el).addEventListener('click', () => copyText(feed.url));
         $('#feed-action-toggle', el).addEventListener('click', () => { close(); toggleFeed(index); });
         $('#feed-action-delete', el).addEventListener('click', () => { close(); deleteFeed(index); });
+        $('#feed-action-reset', el).addEventListener('click', () => {
+          close();
+          const modal = openModal({
+            title: '重置订阅完成状态',
+            subtitle: '重新启用该订阅',
+            body: `<div class="notice">${icon('info')}<span>将订阅「${esc(feed.name || feed.url)}」恢复为未完成并启用。</span></div>
+              <label class="check" style="margin-top:12px"><input type="checkbox" id="reset-clear-history" checked>同时清除该订阅的下载历史</label>
+              <div class="hint" style="margin-top:6px">只有清除历史，才能避免达到总集数后再次被自动停用。</div>`,
+            footer: '<button class="btn" data-action="modal-close">取消</button><span class="spacer"></span><button class="btn btn-primary" id="reset-confirm">重置并启用</button>',
+          });
+          modal.el.querySelector('#reset-confirm').addEventListener('click', async () => {
+            const clearHistory = !!modal.el.querySelector('#reset-clear-history')?.checked;
+            modal.close();
+            try {
+              const r = await api('/api/feeds/reset', { method: 'POST', body: { name: feed.name, url: feed.url, clear_history: clearHistory } });
+              toast(r.deleted_history ? `已重置并清除 ${r.deleted_history} 条历史` : '已重置为未完成并启用', 'success');
+              await loadSettingsPage();
+              if (state.route === 'feeds') loadFeedsPage();
+            } catch (e) { toast(e.message, 'error', 5000); }
+          });
+        });
       }
       let refreshBackupSources = null;
       const feedTabs = $$('[data-feed-tab]', el);

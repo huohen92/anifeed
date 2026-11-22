@@ -2,6 +2,7 @@ package webui
 
 import (
 	"fmt"
+	"github.com/huohen92/anifeed/store"
 	"net/http"
 	"net/url"
 	"strings"
@@ -251,4 +252,52 @@ func lookupConfiguredFeed(cfg *config.Config, rawURL string) (*rsssite.RssConfig
 		}
 	}
 	return nil, false
+}
+
+func (s *Server) handleResetFeed(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPIError(w, http.StatusMethodNotAllowed, "仅支持 POST")
+		return
+	}
+	var payload struct {
+		Name         string `json:"name"`
+		URL          string `json:"url"`
+		ClearHistory bool   `json:"clear_history"`
+	}
+	if err := decodeJSON(w, r, &payload); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+	resp, err := s.loadEditable()
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	found := -1
+	for i := range resp.Config.RSS {
+		feed := &resp.Config.RSS[i]
+		if (payload.URL != "" && feed.URL == payload.URL) || (payload.Name != "" && feed.Name == payload.Name) {
+			found = i
+			break
+		}
+	}
+	if found < 0 {
+		writeAPIError(w, http.StatusNotFound, "未找到订阅")
+		return
+	}
+	feed := &resp.Config.RSS[found]
+	feed.Completed = false
+	feed.Enabled = true
+	if _, err := s.saveEditable(&resp.Config); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	deleted := int64(0)
+	if payload.ClearHistory {
+		if st, err := store.NewWithPath(s.databasePath()); err == nil {
+			deleted, _ = st.DeleteHistoryForFeed(feed.Name, feed.URL)
+			st.Close()
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "deleted_history": deleted, "enabled": true, "completed": false})
 }

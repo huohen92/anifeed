@@ -157,6 +157,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/fs/mkdir", s.handleFSMkdir)
 	mux.HandleFunc("POST /api/feeds/preview", s.handlePreviewFeed)
 	mux.HandleFunc("POST /api/feeds/run", s.handleRunFeed)
+	mux.HandleFunc("POST /api/feeds/reset", s.handleResetFeed)
 	mux.HandleFunc("POST /api/feeds/run-all", s.handleRunAllFeeds)
 	mux.HandleFunc("GET /api/jobs", s.handleListJobs)
 	mux.HandleFunc("GET /api/jobs/{id}", s.handleGetJob)
