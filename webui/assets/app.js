@@ -2373,6 +2373,18 @@ function openFeedModal(index, prefill = null) {
       <div class="source-help ${editing || preselected ? 'hidden' : ''}" id="source-help"></div>
       <div class="browse-cta ${editing || preselected ? 'hidden' : ''}" id="feed-browse-row"></div>
       <div class="form-grid provider-fields ${editing || preselected ? 'hidden' : ''}" id="provider-fields"></div>
+      ${editing ? `<div class="feed-detail-summary">
+        <div class="feed-detail-mark">${icon('rss')}</div>
+        <div class="feed-detail-copy">
+          <div class="feed-detail-title">${esc(feed.name || '未命名订阅')}</div>
+          <div class="feed-detail-meta">${esc(sourceInfo(feed.source, feed.url).label)} · ${esc(mainSubgroup || '未指定字幕组')} · ${feed.tmdb_id ? `TMDB ${esc(feed.tmdb_id)}` : '未填写 TMDB'}</div>
+        </div>
+        <div class="feed-detail-badges">
+          <span class="badge ${feed.enabled !== false ? 'badge-success' : 'badge-warning'}">${feed.enabled !== false ? '已启用' : '已停用'}</span>
+          ${feed.completed ? '<span class="badge">已完成</span>' : ''}
+          <span class="badge">${feed.rename_season ? `第 ${feed.rename_season} 季` : '自动季数'}</span>
+        </div>
+      </div>` : ''}
       <div class="feed-edit-tabs" id="feed-edit-tabs">
         <button type="button" class="active" data-feed-tab="basic">基本</button>
         <button type="button" data-feed-tab="backup">备用 RSS</button>
@@ -2409,7 +2421,7 @@ function openFeedModal(index, prefill = null) {
           </div>
           <div class="feed-form-section">
             <div class="feed-form-section-head">季数与集数</div>
-            <div class="form-grid">
+            <div class="form-grid feed-season-grid">
               <label class="field"><span>季数</span><div class="field-row"><input class="input" id="feed-rename-season" type="number" min="0" max="1000" value="${Number(feed.rename_season || 0)}"><button class="btn btn-sm" type="button" id="feed-season-suggest">${icon('refresh')}识别</button></div><span class="hint">留空/0 时自动识别；可手动修改。</span></label>
               <label class="field"><span>集数偏移</span><input class="input" id="feed-rename-offset" type="number" min="-1000" max="1000" value="${Number(feed.rename_offset || 0)}"></label>
               <label class="field"><span>总集数</span><input class="input" id="feed-total-episodes" type="number" min="0" max="10000" value="${Number(feed.total_episodes || 0)}"></label>
