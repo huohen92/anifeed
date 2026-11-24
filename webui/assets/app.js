@@ -152,6 +152,7 @@ const state = {
   routeEpoch: 0,
   feedQuery: '',
   feedSource: '',
+  feedStatus: 'enabled',
   feedWeekdays: (() => {
     try { return JSON.parse(localStorage.getItem('anifeed_weekdays') || '{}'); } catch { return {}; }
   })(),
@@ -547,7 +548,7 @@ function loadAIPage() {
   const paint = () => {
     view.innerHTML = `<div class="card ai-page">
       <div class="card-head ai-head">
-        <div><h3>AI 助手</h3><div class="sub">查询为主；修改和删除操作必须确认</div></div>
+        <div class="ai-chat-identity"><span class="ai-avatar">AI</span><div><h3>AniFeed 助手</h3><div class="sub">查询为主；修改和删除操作必须确认</div></div></div>
         <div class="field-row"><span class="badge" id="ai-mode">读取中</span><button class="btn btn-sm" id="ai-clear" type="button">清空对话</button><a class="btn btn-sm" href="#/settings">设置</a></div>
       </div>
       <div class="ai-messages" id="ai-messages">${state.aiMessages.map(m => `<div class="ai-msg ${m.role}"><div class="ai-role">${m.role === 'user' ? '你' : 'AI'}</div><div class="ai-text">${esc(m.content).replace(/\n/g, '<br>')}</div></div>`).join('')}${state.aiBusy ? '<div class="ai-msg assistant ai-thinking"><span class="spinner"></span> AI 正在思考…</div>' : ''}</div>
@@ -628,6 +629,11 @@ async function loadDashboard() {
   ];
   jobs.push(api('/api/tasks?limit=200').then(data => { state.tasks = data.tasks || []; state.tasksLoaded = true; }).catch(() => { state.tasks = []; }));
   await Promise.allSettled(jobs);
+  // The first config request can race with login/session initialization.
+  // Retry once before painting, otherwise the overview renders as empty.
+  if (!state.config) {
+    try { await ensureConfig(); } catch { /* keep status-only view */ }
+  }
   if (state.history.length) state.historyLoaded = true;
   if (state.routeEpoch !== epoch) return;
   if (!state.status) {
@@ -724,12 +730,15 @@ function renderDashboard() {
     return !Number.isNaN(date.getTime()) && `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}` === todayKey;
   };
   const todayHistory = (state.history || []).filter(item => isToday(item.created_at));
-  const animeFeeds = allFeeds.filter(feed => todayHistory.some(item =>
+  const todayFeeds = allFeeds.filter(feed => todayHistory.some(item =>
     (item.config_url && item.config_url === feed.url) || (item.config_name && item.config_name === feed.name)
   ));
+  const animeFeeds = todayFeeds.length ? todayFeeds : allFeeds.slice(0, 12);
+  const animeHeading = todayFeeds.length ? '今天的订阅' : '订阅一览';
+  const animeSub = todayFeeds.length ? '今天有更新的番剧 · 点击卡片可编辑' : '当前全部订阅 · 今天暂无更新';
   const animeGrid = animeFeeds.length
     ? `<div class="anime-grid">${animeFeeds.map(feed => dashboardAnimeCard(feed, allFeeds.indexOf(feed))).join('')}</div>`
-    : `<div class="card">${emptyBlock('clock', '今天还没有订阅更新', '今天没有检测到新提交的番剧。', `<a class="btn btn-primary" href="#/feeds">查看全部订阅</a>`)}</div>`;
+    : `<div class="card">${emptyBlock('clock', '还没有订阅', '添加 RSS 订阅后，番剧会显示在这里。', `<a class="btn btn-primary" href="#/feeds">添加订阅</a>`)}</div>`;
 
   const logs = (state.logs || []).slice(-9);
   const logHtml = logs.length
@@ -740,31 +749,43 @@ function renderDashboard() {
     ${banners.join('')}
     <section class="stats">
       <div class="card stat accent">
-        <div class="stat-top"><span class="stat-icon">${icon('rss')}</span>订阅总数</div>
-        <div class="stat-value">${status.feed_count}</div>
-        <div class="stat-foot">${status.auto_enabled ? `自动运行每 ${status.auto_interval_minutes} 分钟` : '自动运行未开启'}</div>
+        <span class="stat-icon">${icon('rss')}</span>
+        <div class="stat-copy">
+          <div class="stat-top">订阅总数</div>
+          <div class="stat-value">${status.feed_count}</div>
+          <div class="stat-foot">${status.auto_enabled ? `自动运行每 ${status.auto_interval_minutes} 分钟` : '自动运行未开启'}</div>
+        </div>
       </div>
       <div class="card stat green">
-        <div class="stat-top"><span class="stat-icon">${icon('download')}</span>今日提交</div>
-        <div class="stat-value">${status.today_count}</div>
-        <div class="stat-foot">历史累计 ${status.history_count} 条</div>
+        <span class="stat-icon">${icon('download')}</span>
+        <div class="stat-copy">
+          <div class="stat-top">今日提交</div>
+          <div class="stat-value">${status.today_count}</div>
+          <div class="stat-foot">历史累计 ${status.history_count} 条</div>
+        </div>
       </div>
       <div class="card stat amber">
-        <div class="stat-top"><span class="stat-icon">${icon('cloud')}</span>云端任务</div>
-        <div class="stat-value">${state.tasks.length}</div>
-        <div class="stat-foot">${stats.running} 个运行中 · ${stats.done} 个已完成</div>
+        <span class="stat-icon">${icon('cloud')}</span>
+        <div class="stat-copy">
+          <div class="stat-top">云端任务</div>
+          <div class="stat-value">${state.tasks.length}</div>
+          <div class="stat-foot">${stats.running} 个运行中 · ${stats.done} 个已完成</div>
+        </div>
       </div>
       <div class="card stat cyan">
-        <div class="stat-top"><span class="stat-icon">${icon('clock')}</span>提交成功率</div>
-        <div class="stat-value">${state.tasks.length ? Math.round((stats.done / Math.max(1, state.tasks.length)) * 100) + '%' : '—'}</div>
-        <div class="stat-foot">${stats.failed} 个失败任务</div>
+        <span class="stat-icon">${icon('clock')}</span>
+        <div class="stat-copy">
+          <div class="stat-top">提交成功率</div>
+          <div class="stat-value">${state.tasks.length ? Math.round((stats.done / Math.max(1, state.tasks.length)) * 100) + '%' : '—'}</div>
+          <div class="stat-foot">${stats.failed} 个失败任务</div>
+        </div>
       </div>
     </section>
 
     <section class="dashboard-anime">
       <div class="card-head">
-        <div><h3>今天的订阅</h3><div class="sub">今天有更新的番剧 · 点击卡片可编辑</div></div>
-
+        <div><h3>${animeHeading}</h3><div class="sub">${animeSub}</div></div>
+        <div class="right"><a class="btn btn-sm btn-ghost" href="#/feeds">查看全部 ${icon('arrow')}</a></div>
       </div>
       ${animeGrid}
     </section>
@@ -793,10 +814,13 @@ function dashboardAnimeCard(feed, index) {
   const source = sourceInfo(feed.source, feed.url);
   const cached = state.covers[feed.url];
   const enabled = feed.enabled !== false;
-  return `<article class="anime-card ${enabled ? '' : 'disabled'}" data-dashboard-feed="${index}">
+  const update = feedUpdateInfo(feed);
+  const completed = !!update.completed;
+  const disabled = !enabled || completed;
+  return `<article class="anime-card ${disabled ? 'disabled' : ''}" data-dashboard-feed="${index}">
     <div class="anime-poster" data-feed-cover data-index="${index}">
-      <span class="poster-fallback"><img src="/poster-placeholder.jpg?v=2" alt="AniFeed"></span>
-      <img alt="${esc(cached ? cached.title || '' : '')}" ${cached && cached.cover ? `src="${esc(cached.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
+      <span class="poster-fallback"><img src="/logo.png" alt="AniFeed"></span>
+      <img class="poster-image" alt="${esc(cached ? cached.title || '' : '')}" ${cached && cached.cover ? `src="${esc(cached.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
       <span class="anime-badge">${completed ? '已完成' : disabled ? '未启用' : '追番中'}</span>
     </div>
     <div class="anime-body">
@@ -804,7 +828,7 @@ function dashboardAnimeCard(feed, index) {
       <div class="anime-meta">${esc(source.label)} · ${esc(feed.site || '自动识别')}</div>
       <div class="anime-foot">
         <span class="badge">${feed.rename_season ? `第 ${feed.rename_season} 季` : '自动季数'}</span>
-        ${feed.tmdb_id ? `<span class="badge badge-success">TMDB</span>` : ''}
+        ${(() => { const p = feedProgress(feed); const t = p.total || '*'; return `<span class="badge" title="主 RSS / 主 + 备用 RSS">主 ${p.mainDone}/${t} · 合计 ${p.allDone}/${t}</span>`; })()}
         <button class="btn btn-sm btn-ghost" type="button" data-dash-run title="运行订阅">${icon('play')}</button>
       </div>
     </div>
@@ -863,6 +887,10 @@ function applyConfigState(config, meta) {
     https_agent: !!site.https_agent,
     headers: Object.entries(site.headers || {}).map(([k, v]) => ({ key: k, value: v })),
   }));
+  // A slow first config response must repaint the overview once it arrives.
+  if (state.route === 'dashboard' && state.status && document.querySelector('.stat')) {
+    try { renderDashboard(); } catch { /* ignore transient repaint errors */ }
+  }
 }
 
 async function loadFeedsPage() {
@@ -982,6 +1010,34 @@ function feedUpdateInfo(feed) {
     episode: adjustedEpisode,
     total,
     completed,
+  };
+}
+
+function feedProgress(feed) {
+  const mainURL = String(feed.url || '').trim();
+  const groups = (feed.subgroups || []).filter(group => group.enabled !== false && String(group.url || '').trim());
+  const mainOffset = Number(feed.rename_offset || (state.config && state.config.rename ? state.config.rename.offset : 0) || 0);
+  const groupByURL = new Map(groups.map(group => [String(group.url || '').trim(), group]));
+  const mainEpisodes = new Set();
+  const allEpisodes = new Set();
+  for (const item of state.history || []) {
+    const itemURL = String(item.config_url || '').trim();
+    const group = groupByURL.get(itemURL);
+    const nameMatch = feed.name && item.config_name === feed.name;
+    if (!nameMatch && itemURL !== mainURL && !group) continue;
+    const episode = parseEpisodeNumber(item.title);
+    if (!episode) continue;
+    const isMain = itemURL === mainURL || (!itemURL && !group);
+    const offset = isMain ? mainOffset : Number(group && group.offset != null ? group.offset : mainOffset);
+    const adjusted = episode + offset;
+    if (adjusted <= 0) continue;
+    allEpisodes.add(adjusted);
+    if (isMain) mainEpisodes.add(adjusted);
+  }
+  return {
+    mainDone: mainEpisodes.size,
+    allDone: allEpisodes.size,
+    total: Number(feed.total_episodes) || 0,
   };
 }
 
@@ -1106,12 +1162,17 @@ async function refreshFeedWeekdays() {
 
 function applyFeedCover(el, data) {
   if (!el || !data || !data.cover) return;
-  const img = $('img', el);
+  const img = el.querySelector('.poster-image');
   if (!img) return;
   img.alt = data.title || '';
-  img.addEventListener('load', () => el.classList.add('has-image'), { once: true });
-  if (img.getAttribute('src') === data.cover) el.classList.add('has-image');
-  img.src = data.cover;
+  el.classList.remove('has-image');
+  const reveal = () => { if (img.naturalWidth > 0) el.classList.add('has-image'); };
+  img.addEventListener('load', reveal, { once: true });
+  img.addEventListener('error', () => el.classList.remove('has-image'), { once: true });
+  if (img.getAttribute('src') !== data.cover) {
+    img.src = data.cover;
+  }
+  if (img.complete) reveal();
   if (data.score > 0) {
     const score = $('.poster-score', el);
     if (score) {
@@ -1160,18 +1221,28 @@ function feedCard(feed, index, completed = false) {
   const enabled = feed.enabled !== false;
   const disabled = !enabled || completed;
   const cachedCover = state.covers[feed.url];
-  return `<article class="anime-card feed-manage-card ${disabled ? 'disabled' : ''}">
+  const update = feedUpdateInfo(feed);
+  const progress = feedProgress(feed);
+  const totalText = progress.total || '*';
+  const subgroup = subgroupLabel(feed.subgroup_name || urlSubgroupName(feed.url), feed.name);
+  return `<article class="anime-card feed-manage-card ${disabled ? 'disabled' : ''}" title="${esc(feed.name)}">
     <div class="anime-poster" data-feed-cover data-feed-poster data-index="${index}" data-source="${source.key}" title="点击编辑订阅">
-      <span class="poster-fallback"><img src="/poster-placeholder.jpg?v=2" alt="AniFeed"></span>
-      <img alt="${esc(cachedCover ? cachedCover.title || '' : '')}" ${cachedCover && cachedCover.cover ? `src="${esc(cachedCover.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
+      <span class="poster-fallback"><img src="/logo.png" alt="AniFeed"></span>
+      <img class="poster-image" alt="${esc(cachedCover ? cachedCover.title || '' : '')}" ${cachedCover && cachedCover.cover ? `src="${esc(cachedCover.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
       <span class="anime-badge">${completed ? '已完成' : disabled ? '未启用' : '追番中'}</span>
+      <div class="feed-cover-overlay">
+        <h4>${esc(feed.name || '未命名订阅')}</h4>
+        <div>第 ${Number(feed.rename_season) || 1} 季${subgroup ? ` · ${esc(subgroup)}` : ''}</div>
+        <div class="feed-cover-progress">主 ${progress.mainDone} · 合计 ${progress.allDone}/${totalText}</div>
+      </div>
       <button class="poster-action poster-action-left" type="button" data-poster-action="poster" title="修改海报">${icon('image')}</button>
       <button class="poster-action poster-action-right" type="button" data-poster-action="edit" title="编辑订阅">${icon('edit')}</button>
       <span class="poster-score hidden"></span>
     </div>
-    <div class="anime-body">
-      <h4 title="${esc(feed.name)}">${esc(feed.name || '未命名订阅')}</h4>
-      <div class="anime-meta">${esc(source.label)} · ${esc(feed.site || '自动识别')}</div>
+    <div class="feed-card-tags">
+      <span class="badge">${esc(source.label)}</span>
+      <span class="badge">主 ${progress.mainDone} · 合计 ${progress.allDone}/${totalText}</span>
+      ${update.completed ? '<span class="badge badge-warning">已完成</span>' : ''}
     </div>
   </article>`;
 }
@@ -1862,8 +1933,9 @@ function renderRuleResults(container, data) {
       <div class="hint" style="margin:6px 0 8px">自动：只在规则匹配的条目中按集数分组，再按分辨率、语言、内封/内嵌、编码等评分选一个；被规则过滤的条目不参与自动。未限定语言时默认优先简体，选择繁体时自动在繁体候选里选。</div>
       ${!data.one_per_episode ? `<div class="notice" style="margin:6px 0 8px">${icon('info')}<span>当前仅识别并记录，不实际跳过；实际会提交全部规则匹配项。开启「每集只下载一个版本」后才按自动建议提交。</span></div>` : ''}
       ${visible.length ? `<div class="table-wrap rule-result-table-wrap">
-        <table class="table rename-preview-table">
-          <thead><tr><th>RSS / BT 标题</th><th>重命名后</th><th>集数</th><th>规则</th><th>自动建议</th><th>下载</th><th>状态</th></tr></thead>
+        <table class="table rename-preview-table item-preview-table">
+          <colgroup><col style="width:34px"><col style="width:64px"><col style="width:62px"><col style="width:118px"><col><col style="width:240px"></colgroup>
+          <thead><tr><th>选</th><th>下载</th><th>已下载</th><th>字幕组</th><th>RSS / BT 标题</th><th>重命名后</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>` : `<div class="empty" style="padding:22px"><span class="hint">当前视图没有条目。</span></div>`}
@@ -1950,12 +2022,11 @@ async function openItemPreview(feed) {
             const isAllowed = allowed.get(item.key);
             return `<tr class="${item.filtered ? 'preview-filtered-row' : ''}">
               <td data-label="选择"><input type="checkbox" class="preview-check" data-key="${esc(item.key)}" ${selectedKeys.has(item.key) ? 'checked' : ''}></td>
-              <td class="nowrap" data-label="是否下载">${item.filtered ? '<span class="badge badge-warning">过滤</span>' : (item.coveredBy && !isAllowed ? `<span class="badge" title="已由 ${esc(item.coveredBy.source_subgroup || '主 RSS')} 覆盖">否</span>` : `<button type="button" class="badge ${isAllowed ? 'badge-primary' : ''}" data-preview-toggle="${index}">${isAllowed ? '是' : '否'}</button>`)}</td>
-              <td class="nowrap" data-label="已下载">${item.downloaded ? '<span class="badge badge-success">是</span>' : '<span class="badge">否</span>'}</td>
-              <td class="nowrap" data-label="主 RSS"><span class="badge ${item.source_role === 'main' ? 'badge-success' : 'badge'}">${item.source_role === 'main' ? '是' : '否'}</span></td>
-              <td class="nowrap" data-label="字幕组">${esc(item.subgroup || '未知字幕组')}</td>
-              <td class="name-cell" data-label="标题"><div class="title">${esc(item.title)}</div></td>
-              <td data-label="重命名">${item.filtered ? `<span class="hint">${esc(item.filter_reason || '被当前规则过滤')}</span>` : (item.renamed ? `<code class="preview-renamed">${esc(item.renamed)}</code>` : '<span class="form-error">无法解析</span>')}</td>
+              <td class="nowrap preview-col-status" data-label="是否下载">${item.filtered ? '<span class="badge badge-warning">过滤</span>' : (item.coveredBy && !isAllowed ? `<span class="badge" title="已由 ${esc(item.coveredBy.source_subgroup || '主 RSS')} 覆盖">否</span>` : `<button type="button" class="badge ${isAllowed ? 'badge-primary' : ''}" data-preview-toggle="${index}">${isAllowed ? '是' : '否'}</button>`)}</td>
+              <td class="nowrap preview-col-downloaded" data-label="已下载">${item.downloaded ? '<span class="badge badge-success">是</span>' : '<span class="badge">否</span>'}</td>
+              <td class="nowrap preview-col-subgroup" data-label="字幕组"><span class="rss-role-badge ${item.source_role === 'main' ? 'main' : 'backup'}">${item.source_role === 'main' ? '主' : '备'}</span> ${esc(item.subgroup || '未知字幕组')}</td>
+              <td class="name-cell" data-label="标题"><div class="preview-mobile-meta"><span class="${item.filtered ? 'meta-warn' : (isAllowed ? 'meta-ok' : 'meta-muted')}">下载 ${item.filtered ? '过滤' : (isAllowed ? '是' : '否')}</span><span class="${item.downloaded ? 'meta-ok' : 'meta-muted'}">已下载 ${item.downloaded ? '是' : '否'}</span><span class="${item.source_role === 'main' ? 'meta-primary' : 'meta-info'}">${item.source_role === 'main' ? '主' : '备'} ${esc(item.subgroup || '未知字幕组')}</span></div><div class="title">${esc(item.title)}</div><div class="preview-mobile-rename">${item.filtered ? esc(item.filter_reason || '被当前规则过滤') : (item.renamed ? esc(item.renamed) : '无法解析')}</div></td>
+              <td class="preview-col-rename" data-label="重命名">${item.filtered ? `<span class="hint">${esc(item.filter_reason || '被当前规则过滤')}</span>` : (item.renamed ? `<code class="preview-renamed">${esc(item.renamed)}</code>` : '<span class="form-error">无法解析</span>')}</td>
             </tr>`;
           }).join('');
           const allowedCount = items.filter(item => !item.filtered && allowed.get(item.key)).length;
@@ -1982,8 +2053,9 @@ async function openItemPreview(feed) {
               <button class="btn btn-sm btn-danger" id="preview-delete-downloaded">${icon('trash')}删除已下载</button>
               <label class="check preview-delete-option"><input type="checkbox" id="preview-delete-files">同时删除云盘文件与离线记录</label>
             </div>
-            ${items.length ? `<div class="table-wrap"><table class="table rename-preview-table">
-              <thead><tr><th></th><th>是否下载</th><th>已下载</th><th>主 RSS</th><th>字幕组</th><th>标题</th><th>重命名</th></tr></thead>
+            ${items.length ? `<div class="table-wrap"><table class="table rename-preview-table item-preview-table">
+              <colgroup><col style="width:34px"><col style="width:64px"><col style="width:62px"><col style="width:150px"><col><col style="width:240px"></colgroup>
+              <thead><tr><th>选</th><th>下载</th><th>已下载</th><th>字幕组</th><th>标题</th><th>重命名</th></tr></thead>
               <tbody>${rows}</tbody>
             </table></div>` : `<div class="empty" style="padding:30px"><span class="hint">当前规则没有匹配到条目。</span></div>`}
             <div class="hint" style="margin-top:8px">这里调整的是规则匹配后的条目；保存后运行订阅会优先使用这些选择。已下载来自历史记录。</div>`;
@@ -2365,7 +2437,7 @@ function openFeedModal(index, prefill = null) {
   const tabs = Object.entries(SOURCES).map(([key, info]) => `<button type="button" class="source-tab ${initialSource === key ? 'active' : ''}" data-source="${key}">${info.label}</button>`).join('');
 
   openModal({
-    title: editing ? '编辑订阅' : '添加订阅',
+    title: editing ? '修改订阅' : '添加订阅',
     subtitle: editing ? '修改订阅设置' : (preselected ? '已选择来源，确认订阅设置后保存' : '选择来源后填写 ID，RSS 地址会自动生成；也可以直接粘贴完整 RSS 地址'),
     size: 'wide feed-edit',
     body: `
@@ -2373,25 +2445,17 @@ function openFeedModal(index, prefill = null) {
       <div class="source-help ${editing || preselected ? 'hidden' : ''}" id="source-help"></div>
       <div class="browse-cta ${editing || preselected ? 'hidden' : ''}" id="feed-browse-row"></div>
       <div class="form-grid provider-fields ${editing || preselected ? 'hidden' : ''}" id="provider-fields"></div>
-      ${editing ? `<div class="feed-detail-summary">
-        <div class="feed-detail-mark">${icon('rss')}</div>
-        <div class="feed-detail-copy">
-          <div class="feed-detail-title">${esc(feed.name || '未命名订阅')}</div>
-          <div class="feed-detail-meta">${esc(sourceInfo(feed.source, feed.url).label)} · ${esc(mainSubgroup || '未指定字幕组')} · ${feed.tmdb_id ? `TMDB ${esc(feed.tmdb_id)}` : '未填写 TMDB'}</div>
-        </div>
-        <div class="feed-detail-badges">
-          <span class="badge ${feed.enabled !== false ? 'badge-success' : 'badge-warning'}">${feed.enabled !== false ? '已启用' : '已停用'}</span>
-          ${feed.completed ? '<span class="badge">已完成</span>' : ''}
-          <span class="badge">${feed.rename_season ? `第 ${feed.rename_season} 季` : '自动季数'}</span>
-        </div>
-      </div>` : ''}
       <div class="feed-edit-tabs" id="feed-edit-tabs">
         <button type="button" class="active" data-feed-tab="basic">基本</button>
         <button type="button" data-feed-tab="backup">备用 RSS</button>
-        <button type="button" data-feed-tab="custom">自定义</button>
+        <button type="button" data-feed-tab="custom">高级</button>
       </div>
       <form id="feed-form" class="feed-form" autocomplete="off">
         <section class="feed-tab-panel active" data-feed-panel="basic">
+          ${editing ? (() => { const p = feedProgress(feed); const t = p.total || '*'; const pct = v => p.total > 0 ? Math.min(100, Math.round(v / p.total * 100)) : 0; return `<div class="feed-progress-summary">
+            <div class="feed-progress-card"><div><span>主 RSS 进度</span><strong>${p.mainDone} / ${t}</strong></div><div class="feed-progress-bar"><i style="width:${pct(p.mainDone)}%"></i></div></div>
+            <div class="feed-progress-card"><div><span>主 + 备用 RSS</span><strong>${p.allDone} / ${t}</strong></div><div class="feed-progress-bar info"><i style="width:${pct(p.allDone)}%"></i></div></div>
+          </div>`; })() : ''}
           <div class="feed-form-section">
             <div class="feed-form-section-head">基本信息</div>
             <div class="form-grid">
@@ -2402,8 +2466,8 @@ function openFeedModal(index, prefill = null) {
           <div class="feed-form-section">
             <div class="feed-form-section-head">RSS 来源</div>
             <div class="form-grid">
-              <div class="field span-2 feed-main-rss">
-                <span class="field-label">主 RSS <span class="rss-role-badge main">主 RSS</span><button class="btn btn-sm btn-ghost" type="button" id="feed-main-rules">规则</button></span>
+              <div class="field span-2 feed-main-rss feed-rss-field">
+                <span class="field-label">主 RSS <button class="btn btn-sm btn-ghost" type="button" id="feed-main-rules">规则</button></span>
                 <div class="feed-main-rss-row">
                   <input class="input" id="feed-subgroup-name" value="${esc(mainSubgroup)}" placeholder="字幕组名称，例如 LoliHouse">
                   <input class="input mono" id="feed-url" value="${esc(feed.url)}" placeholder="https://...">
@@ -2414,21 +2478,37 @@ function openFeedModal(index, prefill = null) {
           <div class="feed-form-section">
             <div class="feed-form-section-head">TMDB 与 BGM</div>
             <div class="form-grid">
-              <label class="field"><span>TMDB ID</span><div class="field-row"><input class="input mono" id="feed-tmdb-id" value="${esc(feed.tmdb_id || '')}" placeholder="自动匹配或手动填写"><button class="btn btn-sm" type="button" id="feed-tmdb-auto">${icon('refresh')}自动</button><button class="btn btn-sm" type="button" id="feed-tmdb-search">${icon('search')}搜索</button></div></label>
-              <label class="field"><span>TMDB 类型</span><select class="select" id="feed-tmdb-type"><option value="tv" ${(feed.tmdb_type || 'tv') === 'tv' ? 'selected' : ''}>TV</option><option value="movie" ${feed.tmdb_type === 'movie' ? 'selected' : ''}>Movie</option></select></label>
+              <label class="field feed-tmdb-line"><span>TMDB ID</span>
+                <div class="feed-tmdb-row">
+                  <input class="input mono" id="feed-tmdb-id" value="${esc(feed.tmdb_id || '')}" placeholder="输入 ID">
+                  <button class="btn btn-sm" type="button" id="feed-tmdb-auto">${icon('refresh')}自动</button>
+                  <button class="btn btn-sm" type="button" id="feed-tmdb-search">${icon('search')}搜索</button>
+                  <select class="select select-compact" id="feed-tmdb-type"><option value="tv" ${(feed.tmdb_type || 'tv') === 'tv' ? 'selected' : ''}>TV</option><option value="movie" ${feed.tmdb_type === 'movie' ? 'selected' : ''}>Movie</option></select>
+                </div>
+              </label>
               <label class="field span-2"><span>BGM 链接</span><input class="input mono" id="feed-bgm-url" value="${esc(initialBgm)}" placeholder="https://bgm.tv/subject/665390"></label>
             </div>
           </div>
           <div class="feed-form-section">
             <div class="feed-form-section-head">季数与集数</div>
             <div class="form-grid feed-season-grid">
-              <label class="field"><span>季数</span><div class="field-row"><input class="input" id="feed-rename-season" type="number" min="0" max="1000" value="${Number(feed.rename_season || 0)}"><button class="btn btn-sm" type="button" id="feed-season-suggest">${icon('refresh')}识别</button></div><span class="hint">留空/0 时自动识别；可手动修改。</span></label>
-              <label class="field"><span>集数偏移</span><input class="input" id="feed-rename-offset" type="number" min="-1000" max="1000" value="${Number(feed.rename_offset || 0)}"></label>
-              <label class="field"><span>总集数</span><input class="input" id="feed-total-episodes" type="number" min="0" max="10000" value="${Number(feed.total_episodes || 0)}"></label>
+              <div class="field span-2 feed-season-line"><span>季数 / 总集数</span>
+                <div class="feed-season-fields">
+                  <label class="feed-inline-field"><input class="input input-compact" id="feed-rename-season" type="number" min="0" max="1000" placeholder="季数" value="${Number(feed.rename_season || 0)}"><button class="btn btn-sm" type="button" id="feed-season-suggest" title="识别季数">${icon('refresh')}</button></label>
+                  <label class="feed-inline-field"><input class="input input-compact" id="feed-total-episodes" type="number" min="0" max="10000" placeholder="总集数" value="${Number(feed.total_episodes || 0)}"></label>
+                </div>
+              </div>
+              <label class="field"><span>集数偏移</span><input class="input input-compact" id="feed-rename-offset" type="number" min="-1000" max="1000" value="${Number(feed.rename_offset || 0)}"></label>
             </div>
-            <label class="field span-2"><span>启用自动加入备用 RSS</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="feed-auto-backup" ${feed.auto_backup !== false ? 'checked' : ''}><span></span></span><span>仅对该订阅生效</span><button class="help-dot" type="button" id="feed-auto-backup-help" title="查看说明">?</button></span></label>
-            <label class="field span-2"><span>自动备用 RSS 使用 TMDB 集数偏移</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="feed-auto-offset" ${feed.auto_offset ? 'checked' : ''}><span></span></span><span>TMDB 自动校正</span><button class="help-dot" type="button" id="feed-auto-offset-help" title="查看说明">?</button></span></label>
           </div>
+          ${editing ? `<div class="feed-edit-actions">
+            <button class="btn btn-soft" type="button" id="feed-action-run">${icon('play')}运行订阅</button>
+            <button class="btn" type="button" id="feed-action-copy">${icon('link')}复制 RSS</button>
+            <button class="btn" type="button" id="feed-action-toggle">${feed.enabled === false ? '启用订阅' : '禁用订阅'}</button>
+            <button class="btn" type="button" id="feed-action-reset">重置为未完成</button>
+            <span class="spacer"></span>
+            <button class="btn btn-danger" type="button" id="feed-action-delete">${icon('trash')}删除订阅</button>
+          </div>` : ''}
         </section>
 
         <section class="feed-tab-panel" data-feed-panel="backup">
@@ -2444,7 +2524,9 @@ function openFeedModal(index, prefill = null) {
         </section>
 
         <section class="feed-tab-panel" data-feed-panel="custom">
-          <div class="form-grid">
+          <div class="feed-form-section">
+            <div class="feed-form-section-head">保存位置</div>
+            <div class="form-grid">
             <label class="field"><span>保存文件夹来源</span><select class="select" id="feed-final-source">
               <option value="global1" ${feed.final_cid ? '' : (Number(feed.final_mode) === 2 ? '' : 'selected')}>全局保存文件夹 1</option>
               <option value="global2" ${feed.final_cid ? '' : (Number(feed.final_mode) === 2 ? 'selected' : '')}>全局保存文件夹 2（按番剧分文件夹）</option>
@@ -2461,26 +2543,31 @@ function openFeedModal(index, prefill = null) {
                 <option value="2" ${Number(feed.final_custom_mode) === 2 ? 'selected' : ''}>保存文件夹 2 子路径：按子路径分文件夹</option>
               </select><span class="hint">保存文件夹 2 会使用全局子路径模板。</span>
             </label>
-            <label class="field"><span>缓存过期（秒）</span><input class="input" id="feed-expiration" type="number" min="0" step="1" value="${feed.expiration || 0}"><span class="hint">0 使用全局缓存策略。</span></label>
-            <div class="field span-2"><div class="field-row"><button class="btn btn-sm" type="button" id="feed-rules">${icon('filter')}规则与重命名</button><button class="btn btn-sm" type="button" id="feed-item-preview">${icon('eye')}预览</button><span class="hint">预览会合并主 RSS 和全部备用 RSS，并按集数排序。</span></div></div>
-            <div class="field span-2">
-              <div class="field-row">
-                <button class="btn btn-sm" type="button" id="feed-preview">${icon('eye')}测试订阅</button>
-                <span class="hint">抓取 RSS 并应用过滤规则，按来源显示匹配结果。</span>
+            <label class="field"><span>缓存过期（秒）</span><input class="input input-compact" id="feed-expiration" type="number" min="0" step="1" value="${feed.expiration || 0}"><span class="hint">0 使用全局缓存策略。</span></label>
+            </div>
+          </div>
+          <div class="feed-form-section">
+            <div class="feed-form-section-head">备用 RSS 策略</div>
+            <div class="form-grid">
+              <label class="field span-2"><span>启用自动加入备用 RSS</span><span class="check" style="height:32px"><span class="switch"><input type="checkbox" id="feed-auto-backup" ${feed.auto_backup !== false ? 'checked' : ''}><span></span></span><span>仅对该订阅生效</span><button class="help-dot" type="button" id="feed-auto-backup-help" title="查看说明">?</button></span></label>
+              <label class="field span-2"><span>自动备用 RSS 使用 TMDB 集数偏移</span><span class="check" style="height:32px"><span class="switch"><input type="checkbox" id="feed-auto-offset" ${feed.auto_offset ? 'checked' : ''}><span></span></span><span>TMDB 自动校正</span><button class="help-dot" type="button" id="feed-auto-offset-help" title="查看说明">?</button></span></label>
+            </div>
+          </div>
+          <div class="feed-form-section">
+            <div class="feed-form-section-head">规则与预览</div>
+            <div class="form-grid">
+              <div class="field span-2"><div class="field-row"><button class="btn btn-sm" type="button" id="feed-rules">${icon('filter')}规则与重命名</button><button class="btn btn-sm" type="button" id="feed-item-preview">${icon('eye')}预览</button><span class="hint">预览会合并主 RSS 和全部备用 RSS，并按集数排序。</span></div></div>
+              <div class="field span-2">
+                <div class="field-row">
+                  <button class="btn btn-sm" type="button" id="feed-preview">${icon('eye')}测试订阅</button>
+                  <span class="hint">抓取 RSS 并应用过滤规则，按来源显示匹配结果。</span>
+                </div>
+                <div id="feed-preview-box"></div>
               </div>
-              <div id="feed-preview-box"></div>
             </div>
           </div>
         </section>
-      </form>
-      ${editing ? `<div class="feed-edit-actions">
-        <button class="btn btn-soft" type="button" id="feed-action-run">${icon('play')}运行订阅</button>
-        <button class="btn" type="button" id="feed-action-copy">${icon('link')}复制 RSS</button>
-        <button class="btn" type="button" id="feed-action-toggle">${feed.enabled === false ? '启用订阅' : '禁用订阅'}</button>
-        <button class="btn" type="button" id="feed-action-reset">重置为未完成</button>
-        <span class="spacer"></span>
-        <button class="btn btn-danger" type="button" id="feed-action-delete">${icon('trash')}删除订阅</button>
-      </div>` : ''}`,
+      </form>`,
     footer: `<button class="btn" data-action="modal-close">取消</button><span class="spacer"></span><button class="btn btn-primary" id="feed-save">${icon('save')}${editing ? '保存修改' : '添加订阅'}</button>`,
     onMount(el, close) {
       const form = $('#feed-form', el);
@@ -2772,12 +2859,14 @@ function openFeedModal(index, prefill = null) {
       });
       $('#feed-auto-backup-help', el)?.addEventListener('click', () => openModal({
         title: '自动加入备用 RSS 说明',
+        size: 'narrow',
         subtitle: '仅对该订阅生效',
         body: `<div class="notice">${icon('info')}<span>主 RSS 连续添加失败达到设定次数后，才会检查该订阅的缺失集和喜好字幕组，并尝试添加备用 RSS。全局「自动添加备用字幕组」也必须开启；关闭本开关可单独跳过该订阅。</span></div>`,
         footer: '<button class="btn btn-primary" data-action="modal-close">知道了</button>',
       }));
       $('#feed-auto-offset-help', el)?.addEventListener('click', () => openModal({
         title: '自动备用 RSS 偏移说明',
+        size: 'narrow',
         subtitle: '默认关闭，按需开启',
         body: `<div class="notice">${icon('info')}<span>若番剧存在分季放送，例如 BGM 第一季 1-13、第二季 14-26，而 TMDB 统一为第一季 1-26，开启该功能后，系统会用 TMDB 分集和发布日期计算备用 RSS 的季数与偏移，提高准确度。</span></div><div class="hint" style="margin-top:10px">需要填写 TMDB ID 和 TMDB API Key；匹配样本不足时会保留 Offset 0。</div>`,
         footer: '<button class="btn btn-primary" data-action="modal-close">知道了</button>',
@@ -2800,13 +2889,18 @@ function openFeedModal(index, prefill = null) {
         } catch { /* 自动识别失败不阻断添加 */ }
       };
       let seasonTimer = null;
-      const scheduleSeason = () => { clearTimeout(seasonTimer); seasonTimer = setTimeout(suggestSeason, 500); };
+      const autoSeason = !editing;
+      const scheduleSeason = () => {
+        if (!autoSeason) return;
+        clearTimeout(seasonTimer);
+        seasonTimer = setTimeout(suggestSeason, 500);
+      };
       $('#feed-url', el)?.addEventListener('change', scheduleSeason);
       $('#feed-name', el)?.addEventListener('change', scheduleSeason);
       $('#feed-tmdb-id', el)?.addEventListener('change', scheduleSeason);
       $('#feed-season-suggest', el)?.addEventListener('click', suggestSeason);
       $('#feed-rename-season', el)?.addEventListener('input', event => { event.target.dataset.autofilled = ''; });
-      setTimeout(suggestSeason, 300);
+      if (autoSeason) setTimeout(suggestSeason, 300);
       const fillTotalFromTMDB = async (id, type) => {
         const totalInput = $('#feed-total-episodes', el);
         if (!totalInput || Number(totalInput.value) > 0 || !id) return;
@@ -3726,9 +3820,25 @@ function initSettingsSections() {
     about: ['关于', '版本和项目信息'],
   };
 
+  const foldMeta = {
+    '自动运行': ['高级运行设置', '自动运行间隔、并发和通知行为'],
+    '洗板': ['高级整理设置', '洗板、清理和迁移规则'],
+    '多字幕组': ['实验功能', '多字幕组与多 RSS 共存'],
+    '自动备用字幕组': ['高级备用 RSS 设置', '失败触发、自动偏移和跳过策略'],
+    'AI 助手': ['AI 设置', 'DeepSeek 接口、权限与密钥'],
+  };
   cards.forEach(card => {
     const title = (card.querySelector('.section-title h3') || {}).textContent || '';
     card.dataset.settingsGroup = groupByTitle[title.trim()] || 'connection';
+    const fold = foldMeta[title.trim()];
+    if (fold && !card.closest('.settings-fold')) {
+      const details = document.createElement('details');
+      details.className = 'settings-fold';
+      details.dataset.settingsGroup = card.dataset.settingsGroup;
+      details.innerHTML = `<summary><span class="fold-title">${fold[0]}</span><small>${fold[1]}</small><span class="fold-state"></span></summary><div class="settings-fold-body"></div>`;
+      card.parentNode.insertBefore(details, card);
+      details.querySelector('.settings-fold-body').appendChild(card);
+    }
   });
   const buttons = $$('[data-settings-section]');
   if (!buttons.some(button => button.dataset.settingsSection === state.settingsSection)) state.settingsSection = 'connection';
@@ -3738,6 +3848,9 @@ function initSettingsSections() {
     buttons.forEach(button => button.classList.toggle('active', button.dataset.settingsSection === state.settingsSection));
     cards.forEach(card => {
       card.style.display = card.dataset.settingsGroup === state.settingsSection ? '' : 'none';
+    });
+    $$('.settings-fold').forEach(fold => {
+      fold.style.display = fold.dataset.settingsGroup === state.settingsSection ? '' : 'none';
     });
     if (intro) intro.innerHTML = `<strong>${meta[0]}</strong><span>${meta[1]}</span>`;
   };
@@ -4208,6 +4321,7 @@ function renderSettingsPage() {
 
     $('#auto-backup-logic-help')?.addEventListener('click', () => openModal({
       title: '自动备用 RSS 完整逻辑',
+        size: 'narrow',
       subtitle: '从失败检测到 Season + Offset',
       body: `<div class="kv">
         <div class="kv-row"><span>1. 总开关</span><code>设置中的自动添加备用字幕组</code></div>
@@ -4227,6 +4341,7 @@ function renderSettingsPage() {
     }));
     $('#auto-offset-samples-help')?.addEventListener('click', () => openModal({
       title: '偏移匹配样本数说明',
+        size: 'narrow',
       subtitle: '不是下载次数，也不是重试次数',
       body: `<div class="notice">${icon('info')}<span>样本数指：有多少条 RSS 条目成功匹配到 TMDB，并且计算出的「TMDB 季 + 偏移」完全一致。</span></div>
         <div class="kv" style="margin-top:12px">

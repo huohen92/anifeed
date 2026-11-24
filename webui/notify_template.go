@@ -52,7 +52,7 @@ func (s *Server) sendAddedNotifications(cfg *config.Config, results []p115.FeedR
 	}
 }
 
-func (s *Server) sendItemNotification(cfg *config.Config, feedName, feedURL, itemTitle, action, eventName string, success bool) {
+func (s *Server) sendItemNotification(cfg *config.Config, feedName, feedURL, itemTitle, action, eventName string, success bool, failureCounts ...int) {
 	if cfg == nil || cfg.Notify.Webhook == "" {
 		return
 	}
@@ -109,6 +109,16 @@ func (s *Server) sendItemNotification(cfg *config.Config, feedName, feedURL, ite
 		date = strconv.Itoa(parsed.Day())
 	}
 
+	failureCount := 0
+	if len(failureCounts) > 0 && failureCounts[0] > 0 {
+		failureCount = failureCounts[0]
+	}
+	if action == "下载失败" {
+		if failureCount <= 0 {
+			failureCount = 1
+		}
+		eventName = fmt.Sprintf("下载失败 %d 次", failureCount)
+	}
 	if strings.TrimSpace(eventName) == "" {
 		eventName = predictedRenameName(cfg, &feed, itemTitle)
 	}
@@ -133,6 +143,7 @@ func (s *Server) sendItemNotification(cfg *config.Config, feedName, feedURL, ite
 		"date":                 date,
 		"text":                 eventName,
 		"bgmEpisodeTitle":      episodeTitle,
+		"failureCount":         strconv.Itoa(failureCount),
 	}
 	if meta.Score > 0 {
 		fields["score"] = strconv.FormatFloat(meta.Score, 'f', 1, 64)

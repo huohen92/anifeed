@@ -224,13 +224,13 @@ func (s *Server) runPostProcess() {
 		if !ok {
 			if time.Since(item.CreatedAt) > 24*time.Hour {
 				_ = ag.StoreInstance.FailPostTask(item.TaskHash, "115 中找不到该离线任务，可能已被清理", 1)
-				go s.sendItemNotification(cfg, item.ConfigName, item.SourceURL, item.Title, "下载失败", "", false)
+				go s.sendItemNotification(cfg, item.ConfigName, item.SourceURL, item.Title, "下载失败", "", false, item.Attempts+1)
 			}
 			continue
 		}
 		if task.IsFailed() {
 			_ = ag.StoreInstance.FailPostTask(item.TaskHash, "115 离线任务失败", 1)
-			go s.sendItemNotification(cfg, item.ConfigName, item.SourceURL, item.Title, "下载失败", "", false)
+			go s.sendItemNotification(cfg, item.ConfigName, item.SourceURL, item.Title, "下载失败", "", false, item.Attempts+1)
 			continue
 		}
 		if !task.IsDone() {
@@ -241,7 +241,7 @@ func (s *Server) runPostProcess() {
 			if time.Since(item.CreatedAt) > time.Duration(timeout)*time.Minute {
 				reason := fmt.Sprintf("超过 %d 分钟未完成", timeout)
 				_ = ag.StoreInstance.FailPostTask(item.TaskHash, reason, 1)
-				go s.sendItemNotification(cfg, item.ConfigName, item.SourceURL, item.Title, "下载失败", "", false)
+				go s.sendItemNotification(cfg, item.ConfigName, item.SourceURL, item.Title, "下载失败", "", false, item.Attempts+1)
 			}
 			continue
 		}

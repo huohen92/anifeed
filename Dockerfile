@@ -3,7 +3,7 @@
 FROM golang:1.25-bookworm AS build
 
 ARG GOPROXY=https://proxy.golang.org,direct
-ARG ANIFEED_VERSION=0.03.2
+ARG ANIFEED_VERSION=0.03.4
 ENV GOPROXY=${GOPROXY} \
     CGO_ENABLED=1 \
     GOOS=linux
