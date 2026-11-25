@@ -50,6 +50,7 @@ const ICONS = {
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
   upload: '<path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 20h14"/>',
   eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 10.6a3 3 0 0 0 4.2 4.2"/><path d="M9.9 5.2A10.9 10.9 0 0 1 12 5c6.5 0 10 7 10 7a17.5 17.5 0 0 1-3.1 4.1M6.3 6.3A17.6 17.6 0 0 0 2 12s3.5 7 10 7c1.2 0 2.3-.2 3.3-.6"/>',
+  ai: '<path d="M12 3.2l1.85 4.5 4.5 1.85-4.5 1.85L12 15.9l-1.85-4.5L5.65 9.55l4.5-1.85L12 3.2z"/><path d="M18 15l.8 1.95 1.95.8-1.95.8L18 20.5l-.8-1.95-1.95-.8 1.95-.8L18 15z"/>',
   terminal: '<path d="M4 5h16v14H4z"/><path d="M7 9l3 3-3 3M13 15h4"/>',
   save: '<path d="M5 3h11l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M8 3v6h8V3"/><path d="M8 21v-7h8v7"/>',
   file: '<path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5"/>',
@@ -185,6 +186,82 @@ const state = {
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+
+/* ===== 季度标注（仅前端显示，不参与后端重命名） ===== */
+const QUARTER_KEY = 'anifeed.quarters.v3';
+function quarterMap() {
+  try { return JSON.parse(localStorage.getItem(QUARTER_KEY) || '{}') || {}; } catch (e) { return {}; }
+}
+function saveQuarterMap(map) {
+  try { localStorage.setItem(QUARTER_KEY, JSON.stringify(map)); } catch (e) {}
+}
+function quarterOf(feed) {
+  return (feed && feed.url && quarterMap()[feed.url]) || '';
+}
+function quarterLabel(q) {
+  if (!q) return '';
+  const parts = String(q).split('-');
+  if (parts.length !== 2) return String(q);
+  return parts[0] + '-' + parts[1];
+}
+
+
+/* 按实际放送日期推算季度：优先取与当前进度对应的那一集，其次取已播出的最后一集 */
+function quarterFromEpisodeList(list, feed) {
+  if (!Array.isArray(list) || !list.length) return '';
+  const progress = (typeof feedProgress === 'function') ? feedProgress(feed) : {};
+  const target = Number(progress.mainDone || 0) || Number(progress.allDone || 0) || 0;
+  const season = Number((feed && feed.rename_season) || 0);
+  let pool = season > 0 ? list.filter(function (e) { return Number(e.season) === season; }) : [];
+  if (!pool.length) pool = list.slice();
+  let pick = null;
+  if (target > 0) pick = pool.find(function (e) { return Number(e.episode) === target; }) || null;
+  if (!pick) {
+    const today = new Date().toISOString().slice(0, 10);
+    const aired = pool.filter(function (e) { return e.air_date && e.air_date <= today; });
+    pick = aired.length ? aired[aired.length - 1] : null;
+  }
+  return pick ? quarterFromDate(pick.air_date) : '';
+}
+function quarterFromDate(dateStr) {
+  if (!dateStr) return '';
+  const m = String(dateStr).match(/^(\d{4})-(\d{2})/);
+  if (!m) return '';
+  const month = Number(m[2]);
+  const q = month <= 3 ? '01' : month <= 6 ? '04' : month <= 9 ? '07' : '10';
+  return m[1] + '-' + q;
+}
+
+function setQuarter(feed, q) {
+  const map = quarterMap();
+  if (!feed || !feed.url) return;
+  if (q) map[feed.url] = q; else delete map[feed.url];
+  saveQuarterMap(map);
+}
+
+function quarterFilterValues() {
+  const map = quarterMap();
+  return [...new Set(Object.keys(map).map(function (k) { return map[k]; }))].filter(Boolean).sort().reverse();
+}
+
+function quarterOptions(selected) {
+  const labels = { 1: '01', 2: '04', 3: '07', 4: '10' };
+  const now = new Date();
+  let y = now.getFullYear();
+  let q = Math.floor(now.getMonth() / 3) + 1;
+  const out = [];
+  for (let i = 0; i < 20; i++) {
+    const month = labels[q];
+    out.push({ value: y + '-' + month, label: y + '-' + month });
+    q -= 1;
+    if (q < 1) { q = 4; y -= 1; }
+  }
+  if (selected && !out.some(function (item) { return item.value === selected; })) {
+    out.unshift({ value: selected, label: quarterLabel(selected) });
+  }
+  return out;
+}
+
 function esc(value) {
   return String(value == null ? '' : value)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -285,6 +362,13 @@ async function copyText(text) {
     catch { toast('复制失败，请手动选择文本', 'error'); }
     area.remove();
   }
+}
+
+function magnetFromHash(hash) {
+  const raw = String(hash || '').trim();
+  if (!raw) return '';
+  if (/^(magnet:|ed2k:|https?:)/i.test(raw)) return raw;
+  return 'magnet:?xt=urn:btih:' + raw;
 }
 
 /* ================================================================
@@ -545,41 +629,92 @@ function loadAIPage() {
   const welcome = '你好，我可以查询订阅、115 任务、下载历史和运行状态。修改订阅需要二次确认。';
   if (!state.aiMessages) state.aiMessages = [{ role: 'assistant', content: welcome }];
   const suggestions = ['现在有哪些订阅？', '最近失败的 115 任务', '最近下载了什么？', '备用 RSS 有哪些？'];
-  const paint = () => {
-    view.innerHTML = `<div class="card ai-page">
-      <div class="card-head ai-head">
-        <div class="ai-chat-identity"><span class="ai-avatar">AI</span><div><h3>AniFeed 助手</h3><div class="sub">查询为主；修改和删除操作必须确认</div></div></div>
-        <div class="field-row"><span class="badge" id="ai-mode">读取中</span><button class="btn btn-sm" id="ai-clear" type="button">清空对话</button><a class="btn btn-sm" href="#/settings">设置</a></div>
-      </div>
-      <div class="ai-messages" id="ai-messages">${state.aiMessages.map(m => `<div class="ai-msg ${m.role}"><div class="ai-role">${m.role === 'user' ? '你' : 'AI'}</div><div class="ai-text">${esc(m.content).replace(/\n/g, '<br>')}</div></div>`).join('')}${state.aiBusy ? '<div class="ai-msg assistant ai-thinking"><span class="spinner"></span> AI 正在思考…</div>' : ''}</div>
-      ${state.aiMessages.length <= 1 ? `<div class="ai-suggest">${suggestions.map(q => `<button type="button" class="btn btn-sm" data-ai-suggest="${esc(q)}">${esc(q)}</button>`).join('')}</div>` : ''}
-      <div class="ai-compose"><textarea class="textarea" id="ai-input" rows="2" placeholder="输入问题，Enter 发送，Shift+Enter 换行" ${state.aiBusy ? 'disabled' : ''}></textarea><button class="btn btn-primary" id="ai-send" ${state.aiBusy ? 'disabled' : ''}>${icon('play')}发送</button></div>
-      <div class="hint">AI 仅使用配置摘要和查询结果；不会读取 Cookie、API Key 或密码。</div>
+
+  const bubble = m => {
+    const isUser = m.role === 'user';
+    return `<div class="chat-row ${isUser ? 'is-user' : 'is-ai'}">
+      ${isUser ? '' : '<span class="chat-avatar">AI</span>'}
+      <div class="chat-bubble">${esc(m.content).replace(/\n/g, '<br>')}</div>
     </div>`;
+  };
+
+  const paintDisabled = () => {
+    view.innerHTML = `<div class="chat-shell chat-disabled">
+      <div class="chat-empty">
+        <span class="chat-avatar lg">AI</span>
+        <strong>AI 助手未启用</strong>
+        <p>在「设置 → 连接与账号 → AI 设置」里填写 API 地址、模型与 Key 后开启。</p>
+        <a class="btn btn-primary" href="#/settings">去启用</a>
+      </div>
+    </div>`;
+  };
+
+  const paint = () => {
+    const empty = state.aiMessages.length <= 1;
+    view.innerHTML = `<div class="chat-shell">
+      <div class="chat-top">
+        <span class="chat-mode" id="ai-mode">${esc(state.aiMode || '')}</span>
+        <button class="chat-ghost" id="ai-clear" type="button">清空</button>
+        <a class="chat-ghost" href="#/settings">设置</a>
+      </div>
+      <div class="chat-body" id="ai-messages">
+        ${empty ? `<div class="chat-empty">
+          <span class="chat-avatar lg">AI</span>
+          <strong>有什么可以帮你？</strong>
+          <p>${esc(welcome)}</p>
+          <div class="chat-chips">${suggestions.map(q => `<button type="button" class="chat-chip" data-ai-suggest="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+        </div>` : state.aiMessages.map(bubble).join('') + (state.aiBusy ? `<div class="chat-row is-ai"><span class="chat-avatar">AI</span><div class="chat-bubble thinking"><i></i><i></i><i></i></div></div>` : '')}
+      </div>
+      <div class="chat-compose">
+        <textarea class="chat-input" id="ai-input" rows="1" placeholder="问点什么…（Enter 发送，Shift+Enter 换行）" ${state.aiBusy ? 'disabled' : ''}></textarea>
+        <button class="chat-send" id="ai-send" type="button" ${state.aiBusy ? 'disabled' : ''} aria-label="发送">${icon('arrow')}</button>
+      </div>
+      <div class="chat-foot">AI 仅使用配置摘要和查询结果；不会读取 Cookie、API Key 或密码。</div>
+    </div>`;
+
     const input = $('#ai-input');
+    const grow = () => { input.style.height = 'auto'; input.style.height = Math.min(140, input.scrollHeight) + 'px'; };
+    const scrollDown = () => { const box = $('#ai-messages'); if (box) box.scrollTop = box.scrollHeight; };
+
     const send = async () => {
-      const text = input.value.trim(); if (!text || state.aiBusy) return;
-      state.aiMessages.push({ role: 'user', content: text }); input.value = ''; state.aiBusy = true; paint();
-      const box = $('#ai-messages'); if (box) box.scrollTop = box.scrollHeight;
+      const text = input.value.trim();
+      if (!text || state.aiBusy) return;
+      state.aiMessages.push({ role: 'user', content: text });
+      input.value = '';
+      state.aiBusy = true;
+      paint();
       const msgs = state.aiMessages.filter(m => m.role === 'user' || m.role === 'assistant').slice(-20);
       try {
         const res = await api('/api/ai/chat', { method: 'POST', body: { messages: msgs } });
         state.aiMessages.push({ role: 'assistant', content: res.reply || '（AI 没有返回内容）' });
-        state.aiBusy = false; paint();
+        state.aiBusy = false;
+        paint();
         if (res.pending) openAIApproval(res.pending);
       } catch (e) {
         state.aiMessages.push({ role: 'assistant', content: '请求失败：' + e.message });
-        state.aiBusy = false; paint();
+        state.aiBusy = false;
+        paint();
       }
     };
+
     $('#ai-send').addEventListener('click', send);
     input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
-    $$('[data-ai-suggest]').forEach(btn => btn.addEventListener('click', () => { input.value = btn.dataset.aiSuggest; }));
+    input.addEventListener('input', grow);
+    $$('[data-ai-suggest]').forEach(btn => btn.addEventListener('click', () => { input.value = btn.dataset.aiSuggest; input.focus(); grow(); }));
     $('#ai-clear').addEventListener('click', () => { state.aiMessages = [{ role: 'assistant', content: welcome }]; state.aiBusy = false; paint(); });
-    const box = $('#ai-messages'); if (box) box.scrollTop = box.scrollHeight;
+    grow();
+    scrollDown();
   };
+
   paint();
-  api('/api/config').then(r => { const el = $('#ai-mode'); if (el) el.textContent = (r.config.ai && r.config.ai.enabled) ? ((r.config.ai.permission === 'full') ? '完整权限' : '只读') : '未启用'; }).catch(() => {});
+  api('/api/config').then(r => {
+    const ai = (r.config || {}).ai || {};
+    state.aiEnabled = !!ai.enabled;
+    if (!ai.enabled) { paintDisabled(); return; }
+    state.aiMode = ai.permission === 'full' ? '完整权限' : '只读';
+    const el = $('#ai-mode');
+    if (el) el.textContent = state.aiMode;
+  }).catch(() => {});
 }
 function openAIApproval(pending) {
   const modal = openModal({
@@ -592,6 +727,15 @@ function openAIApproval(pending) {
     try { const r = await api('/api/ai/action', { method: 'POST', body: { token: pending.token } }); toast(r.message || '操作已执行', 'success'); await loadSettingsPage(); }
     catch (e) { toast(e.message, 'error', 5000); }
   });
+}
+
+function syncAINav() {
+  api('/api/config').then(r => {
+    const on = !!(((r.config || {}).ai || {}).enabled);
+    state.aiEnabled = on;
+    $$('[data-route="ai"], [data-mobile-route="ai"]').forEach(el => { el.style.display = on ? '' : 'none'; });
+    if (!on && (location.hash || '').indexOf('#/ai') === 0) location.hash = '#/dashboard';
+  }).catch(() => {});
 }
 
 function renderFatal(message) {
@@ -828,7 +972,7 @@ function dashboardAnimeCard(feed, index) {
       <div class="anime-meta">${esc(source.label)} · ${esc(feed.site || '自动识别')}</div>
       <div class="anime-foot">
         <span class="badge">${feed.rename_season ? `第 ${feed.rename_season} 季` : '自动季数'}</span>
-        ${(() => { const p = feedProgress(feed); const t = p.total || '*'; return `<span class="badge" title="主 RSS / 主 + 备用 RSS">主 ${p.mainDone}/${t} · 合计 ${p.allDone}/${t}</span>`; })()}
+        ${(() => { const p = feedProgress(feed); const t = p.total || '*'; return `<span class="badge badge-main" title="主 RSS">主 ${p.mainDone}/${t}</span><span class="badge badge-all" title="含备用 RSS">合计 ${p.allDone}/${t}</span>`; })()}
         <button class="btn btn-sm btn-ghost" type="button" data-dash-run title="运行订阅">${icon('play')}</button>
       </div>
     </div>
@@ -878,10 +1022,42 @@ async function ensureConfig() {
   applyConfigState(resp.config, resp.meta);
 }
 
+
+/* ===== 播出季度补全：按 TMDB 首播日期批量生成 YYYY-MM ===== */
+let quarterHydrating = false;
+async function hydrateQuarters() {
+  if (quarterHydrating || !state.config || !Array.isArray(state.config.rss)) return;
+  const pending = state.config.rss.filter(function (feed) {
+    return feed && feed.tmdb_id && feed.url && !quarterOf(feed);
+  });
+  if (!pending.length) return;
+  quarterHydrating = true;
+  for (const feed of pending.slice(0, 40)) {
+    try {
+      const type = feed.tmdb_type || 'tv';
+      const season = Number(feed.rename_season || 0);
+      const seasonQuery = type === 'tv' && season > 1 ? '&season=' + season : '';
+      let q = '';
+      try {
+        const eps = await api('/api/tmdb/episodes?id=' + encodeURIComponent(feed.tmdb_id));
+        q = quarterFromEpisodeList(eps.episodes, feed);
+      } catch (e) { /* 集数表不可用时退回首播日期 */ }
+      if (!q) {
+        const data = await api('/api/tmdb/detail?id=' + encodeURIComponent(feed.tmdb_id) + '&type=' + encodeURIComponent(type) + seasonQuery);
+        q = quarterFromDate(data.season_air_date || data.first_air_date || data.release_date || '');
+      }
+      if (q) setQuarter(feed, q);
+    } catch (e) { /* 单个失败忽略 */ }
+  }
+  quarterHydrating = false;
+  if (location.hash.indexOf('#/feeds') >= 0) renderFeedsPage();
+}
+
 function applyConfigState(config, meta) {
   state.config = config;
   if (meta) state.meta = meta;
   document.body.classList.toggle('hide-hints', !!(config && config.lab && config.lab.hide_hints));
+  setTimeout(hydrateQuarters, 600);
   state.settingsSites = Object.entries((config && config.sites) || {}).map(([host, site]) => ({
     host,
     https_agent: !!site.https_agent,
@@ -1933,9 +2109,8 @@ function renderRuleResults(container, data) {
       <div class="hint" style="margin:6px 0 8px">自动：只在规则匹配的条目中按集数分组，再按分辨率、语言、内封/内嵌、编码等评分选一个；被规则过滤的条目不参与自动。未限定语言时默认优先简体，选择繁体时自动在繁体候选里选。</div>
       ${!data.one_per_episode ? `<div class="notice" style="margin:6px 0 8px">${icon('info')}<span>当前仅识别并记录，不实际跳过；实际会提交全部规则匹配项。开启「每集只下载一个版本」后才按自动建议提交。</span></div>` : ''}
       ${visible.length ? `<div class="table-wrap rule-result-table-wrap">
-        <table class="table rename-preview-table item-preview-table">
-          <colgroup><col style="width:34px"><col style="width:64px"><col style="width:62px"><col style="width:118px"><col><col style="width:240px"></colgroup>
-          <thead><tr><th>选</th><th>下载</th><th>已下载</th><th>字幕组</th><th>RSS / BT 标题</th><th>重命名后</th></tr></thead>
+        <table class="table rename-preview-table">
+          <thead><tr><th>RSS / BT 标题</th><th>重命名后</th><th>集数</th><th>规则</th><th>自动建议</th><th>下载</th><th>状态</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>` : `<div class="empty" style="padding:22px"><span class="hint">当前视图没有条目。</span></div>`}
@@ -1970,8 +2145,8 @@ async function openItemPreview(feed) {
       const sourceBar = `<details class="preview-source-panel">
         <summary>RSS 来源 <span class="badge badge-info">${1 + backupSources.length}</span><span class="hint">主 RSS${backupCount ? ` + ${backupCount} 个备用 RSS` : ''}</span></summary>
         <div class="item-preview-sources">
-          <div class="item-preview-source"><span class="rss-role-badge main">主 RSS</span>${(feed.subgroup_name || urlSubgroupName(feed.url)) ? `<strong>${esc(feed.subgroup_name || urlSubgroupName(feed.url))}</strong>` : ''}<code title="${esc(feed.url || '')}">${esc(feed.url || '')}</code></div>
-          ${backupSources.map(group => `<div class="item-preview-source"><span class="rss-role-badge backup">备用 RSS</span><strong>${esc(subgroupLabel(group.name, feed.name) || '备用字幕组')}</strong><code title="${esc(group.url)}">${esc(group.url)}</code></div>`).join('')}
+          <div class="item-preview-source"><span class="badge badge-primary role-badge">主 RSS</span>${(feed.subgroup_name || urlSubgroupName(feed.url)) ? `<strong>${esc(feed.subgroup_name || urlSubgroupName(feed.url))}</strong>` : ''}<code title="${esc(feed.url || '')}">${esc(feed.url || '')}</code></div>
+          ${backupSources.map(group => `<div class="item-preview-source"><span class="badge role-badge">备用 RSS</span><strong>${esc(subgroupLabel(group.name, feed.name) || '备用字幕组')}</strong><code title="${esc(group.url)}">${esc(group.url)}</code></div>`).join('')}
         </div>
       </details>`;
       const previewSources = [
@@ -2492,13 +2667,13 @@ function openFeedModal(index, prefill = null) {
           <div class="feed-form-section">
             <div class="feed-form-section-head">季数与集数</div>
             <div class="form-grid feed-season-grid">
-              <div class="field span-2 feed-season-line"><span>季数 / 总集数</span>
-                <div class="feed-season-fields">
-                  <label class="feed-inline-field"><input class="input input-compact" id="feed-rename-season" type="number" min="0" max="1000" placeholder="季数" value="${Number(feed.rename_season || 0)}"><button class="btn btn-sm" type="button" id="feed-season-suggest" title="识别季数">${icon('refresh')}</button></label>
-                  <label class="feed-inline-field"><input class="input input-compact" id="feed-total-episodes" type="number" min="0" max="10000" placeholder="总集数" value="${Number(feed.total_episodes || 0)}"></label>
-                </div>
-              </div>
-              <label class="field"><span>集数偏移</span><input class="input input-compact" id="feed-rename-offset" type="number" min="-1000" max="1000" value="${Number(feed.rename_offset || 0)}"></label>
+              <label class="field"><span>季数</span>
+                <div class="field-row"><input class="input input-compact" id="feed-rename-season" type="number" min="0" max="1000" placeholder="季数" value="${Number(feed.rename_season || 0)}"><button class="btn btn-sm btn-icon-only" type="button" id="feed-season-suggest" title="自动识别季数">${icon('refresh')}</button></div>
+                <span class="hint">用于重命名，如 S01</span>
+              </label>
+              <label class="field"><span>集数偏移</span><input class="input input-compact" id="feed-rename-offset" type="number" min="-1000" max="1000" value="${Number(feed.rename_offset || 0)}"><span class="hint">RSS 集数与实际相差几集</span></label>
+              <label class="field"><span>总集数</span><input class="input input-compact" id="feed-total-episodes" type="number" min="0" max="10000" placeholder="总集数" value="${Number(feed.total_episodes || 0)}"><span class="hint">0 表示未设置</span></label>
+              <label class="field"><span>播出季度</span><div class="feed-quarter-editor"><input class="input input-compact" id="feed-quarter-year" type="number" min="2000" max="2100" placeholder="年份" value="${quarterOf(feed) ? quarterOf(feed).slice(0,4) : new Date().getFullYear()}"><select class="select" id="feed-quarter-month">${["01","04","07","10"].map(m => `<option value="${m}" ${((quarterOf(feed) ? quarterOf(feed).slice(5) : String(Math.floor(new Date().getMonth()/3) === 0 ? "01" : Math.floor(new Date().getMonth()/3) === 1 ? "04" : Math.floor(new Date().getMonth()/3) === 2 ? "07" : "10")) === m) ? "selected" : ""}>${m === "01" ? "1月 / Q1" : m === "04" ? "4月 / Q2" : m === "07" ? "7月 / Q3" : "10月 / Q4"}</option>`).join("")}</select></div><span class="hint">仅用于显示和筛选，不参与重命名</span></label>
             </div>
           </div>
           ${editing ? `<div class="feed-edit-actions">
@@ -2555,16 +2730,13 @@ function openFeedModal(index, prefill = null) {
           </div>
           <div class="feed-form-section">
             <div class="feed-form-section-head">规则与预览</div>
-            <div class="form-grid">
-              <div class="field span-2"><div class="field-row"><button class="btn btn-sm" type="button" id="feed-rules">${icon('filter')}规则与重命名</button><button class="btn btn-sm" type="button" id="feed-item-preview">${icon('eye')}预览</button><span class="hint">预览会合并主 RSS 和全部备用 RSS，并按集数排序。</span></div></div>
-              <div class="field span-2">
-                <div class="field-row">
-                  <button class="btn btn-sm" type="button" id="feed-preview">${icon('eye')}测试订阅</button>
-                  <span class="hint">抓取 RSS 并应用过滤规则，按来源显示匹配结果。</span>
-                </div>
-                <div id="feed-preview-box"></div>
-              </div>
+            <div class="feed-action-row">
+              <button class="btn btn-sm" type="button" id="feed-rules">${icon('filter')}规则与重命名</button>
+              <button class="btn btn-sm" type="button" id="feed-item-preview">${icon('eye')}预览条目</button>
+              <button class="btn btn-sm" type="button" id="feed-preview">${icon('zap')}测试订阅</button>
             </div>
+            <p class="feed-action-hint">规则与重命名：过滤、排除与重命名模板；预览条目：合并主 RSS 与全部备用 RSS 按集数排序；测试订阅：抓取并应用规则显示匹配结果。</p>
+            <div id="feed-preview-box"></div>
           </div>
         </section>
       </form>`,
@@ -2641,7 +2813,7 @@ function openFeedModal(index, prefill = null) {
         const renderSubgroups = () => {
           const main = currentMain();
           const mainRow = `<div class="feed-subgroup-row feed-main-source-row" data-main-source-row>
-            <div class="feed-subgroup-source"><span class="rss-role-badge main">主 RSS</span><strong>${esc(main.name || '未命名字幕组')}</strong></div>
+            <div class="feed-subgroup-source"><span class="badge badge-primary role-badge">主 RSS</span><strong>${esc(main.name || '未命名字幕组')}</strong></div>
             <div class="feed-subgroup-source"><code title="${esc(main.url)}">${esc(main.url)}</code></div>
             <div class="feed-subgroup-nums"><span>季 ${main.season || 0}</span><span>偏移 ${main.offset || 0}</span>${main.filter || main.exclude ? '<span class="badge badge-info">独立规则</span>' : ''}</div>
             <div class="feed-subgroup-actions"><button class="btn btn-sm btn-ghost" type="button" data-edit-main>编辑</button></div>
@@ -2900,13 +3072,66 @@ function openFeedModal(index, prefill = null) {
       $('#feed-tmdb-id', el)?.addEventListener('change', scheduleSeason);
       $('#feed-season-suggest', el)?.addEventListener('click', suggestSeason);
       $('#feed-rename-season', el)?.addEventListener('input', event => { event.target.dataset.autofilled = ''; });
+      let quarterTouched = false;
+      const readQuarter = () => {
+        const yearInput = $('#feed-quarter-year', el);
+        const monthInput = $('#feed-quarter-month', el);
+        const year = Number(yearInput && yearInput.value);
+        const month = monthInput && monthInput.value;
+        if (!year || year < 2000 || year > 2100 || !month) return '';
+        return year + '-' + month;
+      };
+      const applyQuarter = () => {
+        const value = readQuarter();
+        if (!value) return;
+        quarterTouched = true;
+        setQuarter(feed, value);
+        toast('已标注为 ' + quarterLabel(value), 'success');
+      };
+      $('#feed-quarter-year', el)?.addEventListener('change', applyQuarter);
+      $('#feed-quarter-month', el)?.addEventListener('change', applyQuarter);
       if (autoSeason) setTimeout(suggestSeason, 300);
+      const refreshQuarterHint = (q) => {
+        if (!q || q.length !== 7) return;
+        const year = $('#feed-quarter-year', el);
+        const month = $('#feed-quarter-month', el);
+        if (year) year.value = q.slice(0, 4);
+        if (month) month.value = q.slice(5);
+      };
+      const loadQuarter = async (id, type) => {
+        if (!id) return;
+        if (quarterOf(feed)) { refreshQuarterHint(quarterOf(feed)); return; }
+        try {
+          const season = Number(feed.rename_season || 0);
+          const seasonQuery = (type || 'tv') === 'tv' && season > 1 ? '&season=' + season : '';
+          let q = '';
+          try {
+            const eps = await api('/api/tmdb/episodes?id=' + encodeURIComponent(id));
+            q = quarterFromEpisodeList(eps.episodes, feed);
+          } catch (e) { /* ignore */ }
+          if (!q) {
+            const data = await api('/api/tmdb/detail?id=' + encodeURIComponent(id) + '&type=' + encodeURIComponent(type || 'tv') + seasonQuery);
+            q = quarterFromDate(data.season_air_date || data.first_air_date || data.release_date || '');
+          }
+          if (q && !quarterTouched) { setQuarter(feed, q); refreshQuarterHint(q); }
+        } catch (e) { /* ignore */ }
+      };
+      if (feed.tmdb_id) loadQuarter(feed.tmdb_id, feed.tmdb_type);
+      $('#feed-tmdb-id', el)?.addEventListener('change', ev => { loadQuarter(ev.target.value.trim(), $('#feed-tmdb-type', el).value); });
       const fillTotalFromTMDB = async (id, type) => {
         const totalInput = $('#feed-total-episodes', el);
-        if (!totalInput || Number(totalInput.value) > 0 || !id) return;
+        if (!id) return;
         try {
           const data = await api(`/api/tmdb/detail?id=${encodeURIComponent(id)}&type=${encodeURIComponent(type || 'tv')}`);
-          if (Number(data.number_of_episodes) > 0) {
+          const q = quarterFromDate(data.first_air_date || data.release_date || '');
+          if (q) {
+            setQuarter(feed, q);
+            const year = $('#feed-quarter-year', el);
+            const month = $('#feed-quarter-month', el);
+            if (year) year.value = q.slice(0, 4);
+            if (month) month.value = q.slice(5);
+          }
+          if (totalInput && Number(totalInput.value) <= 0 && Number(data.number_of_episodes) > 0) {
             totalInput.value = String(Number(data.number_of_episodes));
             markDirty();
           }
@@ -3012,6 +3237,9 @@ function openFeedModal(index, prefill = null) {
           state.config = resp.config;
           state.meta = resp.meta;
           state.dirty = false;
+          const selectedQuarter = readQuarter();
+          if (editing && feed.url && feed.url !== payload.url) setQuarter(feed, '');
+          if (selectedQuarter) setQuarter(payload, selectedQuarter);
           close();
           toast(editing ? '订阅已更新' : '订阅已添加', 'success');
           if (state.route === 'feeds') renderFeedsPage();
@@ -3079,7 +3307,8 @@ function openManageFeeds() {
   const list = () => all.filter(item => {
     const hay = `${item.feed.name || ''} ${item.feed.url || ''} ${item.feed.subgroup_name || ''}`.toLowerCase();
     if (query && !hay.includes(query)) return false;
-    if (season !== 'all' && Number(item.feed.rename_season || 0) !== Number(season)) return false;
+    if (season === 'none') { if (quarterOf(item.feed)) return false; }
+    else if (season !== 'all' && quarterOf(item.feed) !== season) return false;
     if (status !== 'all' && statusOf(item) !== status) return false;
     return true;
   });
@@ -3092,7 +3321,7 @@ function openManageFeeds() {
     const visibleIndices = new Set(items.map(item => item.index));
     [...selected].forEach(index => { if (!visibleIndices.has(index)) selected.delete(index); });
     tableBox.innerHTML = `<div class="table-wrap"><table class="table manage-table">
-      <thead><tr><th><input type="checkbox" id="manage-select-all" ${items.length && items.every(item => selected.has(item.index)) ? 'checked' : ''}></th><th>标题</th><th>季</th><th>字幕组</th><th>状态</th><th>进度</th><th>类型</th><th>URL</th></tr></thead>
+      <thead><tr><th><input type="checkbox" id="manage-select-all" ${items.length && items.every(item => selected.has(item.index)) ? 'checked' : ''}></th><th>标题</th><th>季</th><th>播出季度</th><th>字幕组</th><th>状态</th><th>进度</th><th>类型</th><th>URL</th></tr></thead>
       <tbody>${items.map(({ feed, index, update }) => {
         const total = Number(feed.total_episodes || update.total || 0);
         const progress = total ? `${Number(update.episode || 0)} / ${total}` : `${Number(update.episode || 0)} / —`;
@@ -3101,11 +3330,12 @@ function openManageFeeds() {
           <td data-label="选择"><input type="checkbox" data-manage-select="${index}" ${selected.has(index) ? 'checked' : ''}></td>
           <td class="name-cell" data-label="标题"><div class="title">${esc(feed.name || feed.url)}</div><div class="meta">${feed.tmdb_id ? `TMDB ${esc(feed.tmdb_id)}` : esc(feed.subgroup_name || '')}</div></td>
           <td data-label="季">${Number(feed.rename_season || 0) || '—'}</td>
+          <td data-label="播出季度">${quarterOf(feed) || '—'}</td>
           <td data-label="字幕组">${esc(feed.subgroup_name || urlSubgroupName(feed.url) || '—')}</td>
           <td data-label="状态"><span class="badge ${enabled ? 'badge-success' : ''}">${enabled ? '已启用' : '未启用'}</span></td>
           <td data-label="进度"><span class="badge ${total && Number(update.episode) >= total ? 'badge-success' : 'badge-warning'}">${progress}</span></td>
           <td data-label="类型"><span class="badge badge-info">${esc(feed.tmdb_type || 'tv')}</span></td>
-          <td class="name-cell" data-label="URL"><div class="meta">${esc(feed.url || '')}</div></td>
+          <td data-label="URL"><button class="btn btn-sm url-reveal" type="button" data-url="${esc(feed.url || '')}">查看</button></td>
         </tr>`;
       }).join('')}</tbody></table></div>`;
     tableBox.querySelectorAll('[data-manage-select]').forEach(input => input.addEventListener('change', () => {
@@ -3147,7 +3377,7 @@ function openManageFeeds() {
     size: 'browse',
     body: `<div class="manage-toolbar">
       <div class="search-box">${icon('search')}<input class="input" id="manage-search" placeholder="搜索标题、字幕组或 URL"></div>
-      <select class="select" id="manage-season"><option value="all">全部季数</option>${seasonValues.map(value => `<option value="${value}">第 ${value} 季</option>`).join('')}</select>
+      <select class="select" id="manage-season"><option value="all">全部播出季度</option><option value="none">未标注</option>${quarterFilterValues().map(value => `<option value="${value}">${quarterLabel(value)}</option>`).join('')}</select>
       <select class="select" id="manage-status"><option value="all">全部状态</option><option value="enabled">已启用</option><option value="disabled">未启用</option></select>
       <span class="spacer"></span><span class="badge" id="manage-count">已选 0 项</span>
     </div><div id="manage-table"></div>`,
@@ -3157,6 +3387,23 @@ function openManageFeeds() {
       tableBox = el.querySelector('#manage-table');
       countBox = el.querySelector('#manage-count');
       draw();
+      tableBox.addEventListener('click', event => {
+        const btn = event.target.closest('[data-url]');
+        if (!btn) return;
+        event.stopPropagation();
+        const url = btn.dataset.url || '';
+        if (!url) { toast('该订阅没有地址', 'error'); return; }
+        const modal = openModal({
+          title: '订阅地址',
+          subtitle: btn.closest('tr')?.querySelector('.title')?.textContent?.trim() || '',
+          body: '<div class="url-box">' + esc(url) + '</div>',
+          footer: '<button class="btn btn-sm" id="url-copy">' + icon('copy') + '复制</button><span class="spacer"></span><button class="btn" data-action="modal-close">关闭</button>',
+        });
+        modal.el.querySelector('#url-copy').addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(url); toast('已复制到剪贴板', 'success'); }
+          catch (e) { toast('复制失败，请手动选择', 'error'); }
+        });
+      });
       el.querySelector('#manage-search').addEventListener('input', debounce(event => { query = event.target.value.trim().toLowerCase(); draw(); }, 140));
       el.querySelector('#manage-season').addEventListener('change', event => { season = event.target.value; draw(); });
       el.querySelector('#manage-status').addEventListener('change', event => { status = event.target.value; draw(); });
@@ -3322,7 +3569,7 @@ async function loadTasksPage(force = false) {
     if (!state.status) await loadStatus();
     if (state.routeEpoch !== epoch) return;
     if (!state.status || !state.status.has_cookies) {
-      $('#view').innerHTML = `<div class="card">${emptyBlock('lock', '尚未登录 115',
+      $('#view').innerHTML = `${subPageTabs('tasks')}<div class="card">${emptyBlock('lock', '尚未登录 115',
         '离线任务需要 115 登录后才能读取。请先在设置中填写 Cookies 或扫码登录。',
         `<a class="btn btn-primary" href="#/settings">${icon('login')}去登录</a>`)}</div>`;
       return;
@@ -3332,7 +3579,7 @@ async function loadTasksPage(force = false) {
     state.tasksLoaded = true;
   } catch (err) {
     if (state.routeEpoch !== epoch) return;
-    $('#view').innerHTML = `<div class="card">${emptyBlock('cloud', '无法读取 115 任务', err.message,
+    $('#view').innerHTML = `${subPageTabs('tasks')}<div class="card">${emptyBlock('cloud', '无法读取 115 任务', err.message,
       `<button class="btn btn-primary" id="tasks-retry">${icon('refresh')}重试</button>
        <a class="btn" href="#/settings">${icon('login')}检查登录</a>`)}</div>`;
     const btn = $('#tasks-retry');
@@ -3356,7 +3603,7 @@ function renderTasksPage() {
     ['all', '全部'], ['running', '运行中'], ['done', '已完成'], ['failed', '失败'], ['waiting', '等待中'],
   ];
 
-  $('#view').innerHTML = `
+  $('#view').innerHTML = `${subPageTabs('tasks')}
     <div class="toolbar tasks-toolbar">
       <button class="btn" id="tasks-refresh">${icon('refresh')}刷新</button>
       <button class="btn" id="tasks-add-magnet">${icon('plus')}添加链接</button>
@@ -3415,7 +3662,7 @@ function renderTaskTable() {
       <td data-label="状态">${taskStateBadge(task.state)}</td>
       <td data-label="进度">${progressBar(task)}</td>
       <td class="numeric" data-label="Hash">${esc((task.info_hash || '').slice(0, 16))}${task.info_hash && task.info_hash.length > 16 ? '…' : ''}</td>
-      <td class="actions" data-label="操作"><button class="btn btn-sm btn-ghost task-copy-btn" data-copy-hash="${esc(task.info_hash)}" title="复制 Hash">${icon('copy')}<span class="task-copy-label">复制</span></button></td>
+      <td class="actions" data-label="操作"><button class="btn btn-sm btn-ghost task-copy-btn" data-copy-hash="${esc(magnetFromHash(task.url || task.info_hash))}" title="复制磁力链接">${icon('copy')}<span class="task-copy-label">复制磁力</span></button></td>
     </tr>`).join('')}</tbody>
   </table></div>${allTasks.length > tasks.length ? `<div style="text-align:center;padding:12px"><button class="btn btn-sm" id="task-load-more">加载更多（${allTasks.length - tasks.length}）</button></div>` : ''}`;
   const loadMore = $('#task-load-more');
@@ -3551,10 +3798,10 @@ function renderHistoryPage() {
     <td class="name-cell" data-label="标题"><div class="title" title="${esc(item.title)}">${esc(item.title || '—')}</div><div class="meta">${esc(item.config_url || '')}</div></td>
     <td data-label="订阅"><span class="badge badge-info">${esc(item.config_name || '未命名')}</span></td>
     <td class="numeric" data-label="Hash">${esc((item.task_hash || '').slice(0, 18))}${item.task_hash && item.task_hash.length > 18 ? '…' : ''}</td>
-    <td class="actions" data-label="操作"><button class="btn btn-sm btn-ghost btn-icon-only" data-copy="${esc(item.task_hash || '')}" title="复制任务 Hash">${icon('copy')}</button></td>
+    <td class="actions" data-label="操作"><button class="btn btn-sm btn-ghost btn-icon-only" data-copy="${esc(magnetFromHash(item.task_hash))}" title="复制磁力链接">${icon('copy')}</button></td>
   </tr>`).join('') : '';
 
-  $('#view').innerHTML = `
+  $('#view').innerHTML = `${subPageTabs('history')}
     <div class="toolbar history-toolbar">
       <button class="btn" id="history-refresh">${icon('refresh')}刷新</button>
       <select class="select" id="history-name" style="width:auto;min-width:180px">
@@ -3623,6 +3870,51 @@ function logLevelText(level) {
   return ({ error: '错误', warn: '警告', ok: '完成', info: '信息' })[level] || '信息';
 }
 
+
+/* ===== details 展开/收起高度动画 ===== */
+document.addEventListener('click', function (event) {
+  const summary = event.target.closest('details > summary');
+  if (!summary) return;
+  const details = summary.parentElement;
+  if (!details || !details.classList.contains('settings-fold') && !details.classList.contains('advanced-settings')) return;
+  const body = details.classList.contains('settings-fold')
+    ? details.querySelector(':scope > .settings-fold-body')
+    : [...details.children].find(function (el) { return el.tagName !== 'SUMMARY'; });
+  if (!body) return;
+  event.preventDefault();
+  if (details.open) {
+    const h = body.scrollHeight;
+    body.style.overflow = 'hidden';
+    body.style.height = h + 'px';
+    body.style.transition = 'height .22s ease, opacity .18s ease';
+    requestAnimationFrame(function () { body.style.height = '0px'; body.style.opacity = '0'; });
+    setTimeout(function () { details.open = false; body.style = ''; }, 230);
+  } else {
+    details.open = true;
+    const h = body.scrollHeight;
+    body.style.overflow = 'hidden';
+    body.style.height = '0px';
+    body.style.opacity = '0';
+    body.style.transition = 'height .22s ease, opacity .18s ease';
+    requestAnimationFrame(function () { body.style.height = h + 'px'; body.style.opacity = '1'; });
+    setTimeout(function () { body.style = ''; }, 240);
+  }
+});
+/* ===== 历史页子标签：提交历史 / 离线任务 ===== */
+function subPageTabs(active) {
+  return '<div class="segmented subpage-tabs">' +
+    '<button type="button" data-subpage="history" class="' + (active === 'history' ? 'active' : '') + '">提交历史</button>' +
+    '<button type="button" data-subpage="tasks" class="' + (active === 'tasks' ? 'active' : '') + '">离线任务</button>' +
+    '</div>';
+}
+
+document.addEventListener('click', function (event) {
+  const btn = event.target.closest('[data-subpage]');
+  if (!btn) return;
+  const tab = btn.dataset.subpage;
+  if (tab === 'tasks') { state.routeEpoch++; loadTasksPage(true); }
+  else { state.routeEpoch++; loadHistoryPage(); }
+});
 function visibleLogs() {
   return state.logs.map(parseLogLine).filter(item => {
     if (state.logLevel !== 'all' && item.level !== state.logLevel) return false;
@@ -3794,7 +4086,8 @@ function initSettingsSections() {
   const cards = $$('.settings-stack > section.card');
   if (!cards.length) return;
   const groupByTitle = {
-    '115 账号': 'download',
+    '115 账号': 'connection',
+    '个性化': 'personal',
     'AI 助手': 'connection',
     '服务与访问': 'connection',
     '默认离线设置': 'download',
@@ -3802,27 +4095,27 @@ function initSettingsSections() {
     '自动运行': 'download',
     '重命名': 'organize',
     'TMDB': 'organize',
-    '洗板': 'organize',
+    '洗版': 'organize',
     '多字幕组': 'subgroups',
     '喜好字幕组': 'subgroups',
     '自动备用字幕组': 'subgroups',
     '通知': 'notify',
-    '数据库与缓存': 'advanced',
+    '数据库与缓存': 'about',
     '关于': 'about',
   };
   const sectionMeta = {
     connection: ['连接与账号', '115 账号、AI 助手、Web 访问和代理设置'],
     download: ['下载器', '115、qBittorrent 的账号、地址和保存设置'],
-    organize: ['整理与命名', '重命名、TMDB 关联和洗板'],
+    organize: ['整理与命名', '重命名、TMDB 关联和洗版'],
     subgroups: ['字幕组', '多字幕组、喜好顺序和自动备用'],
     notify: ['通知', '推送渠道、事件开关和模板'],
-    advanced: ['高级', '数据库、缓存与 115 请求节流'],
     about: ['关于', '版本和项目信息'],
+    personal: ['个性化', '背景图、玻璃效果、强调色、导航配色与导入导出'],
   };
 
   const foldMeta = {
     '自动运行': ['高级运行设置', '自动运行间隔、并发和通知行为'],
-    '洗板': ['高级整理设置', '洗板、清理和迁移规则'],
+    '洗版': ['高级整理设置', '洗版、清理和迁移规则'],
     '多字幕组': ['实验功能', '多字幕组与多 RSS 共存'],
     '自动备用字幕组': ['高级备用 RSS 设置', '失败触发、自动偏移和跳过策略'],
     'AI 助手': ['AI 设置', 'DeepSeek 接口、权限与密钥'],
@@ -3840,6 +4133,34 @@ function initSettingsSections() {
       details.querySelector('.settings-fold-body').appendChild(card);
     }
   });
+  // 连接与账号：115 账号 -> AI 助手 -> 服务与访问（放最后）
+  const CONNECTION_ORDER = { '115 账号': 0, 'AI 助手': 1, '服务与访问': 2 };
+  const stack = document.querySelector('.settings-stack');
+  if (stack) {
+    const conn = [...stack.children].filter(node => (node.dataset && node.dataset.settingsGroup) === 'connection');
+    conn.sort((a, b) => {
+      const titleOf = node => {
+        const h = node.querySelector('.section-title h3');
+        if (h) return h.textContent.trim();
+        const t = node.querySelector('.fold-title');
+        return t ? t.textContent.trim() : '';
+      };
+      const ra = CONNECTION_ORDER[titleOf(a)] ?? 99;
+      const rb = CONNECTION_ORDER[titleOf(b)] ?? 99;
+      return ra - rb;
+    });
+    conn.forEach(node => stack.appendChild(node));
+  }
+  // 关于页：关于 -> 数据库与缓存
+  const ABOUT_ORDER = { '关于': 0, '数据库与缓存': 1 };
+  if (stack) {
+    const about = [...stack.children].filter(node => (node.dataset && node.dataset.settingsGroup) === 'about');
+    about.sort((a, b) => {
+      const titleOf = node => { const h = node.querySelector('.section-title h3'); return h ? h.textContent.trim() : ''; };
+      return (ABOUT_ORDER[titleOf(a)] ?? 99) - (ABOUT_ORDER[titleOf(b)] ?? 99);
+    });
+    about.forEach(node => stack.appendChild(node));
+  }
   const buttons = $$('[data-settings-section]');
   if (!buttons.some(button => button.dataset.settingsSection === state.settingsSection)) state.settingsSection = 'connection';
   const intro = $('#settings-section-intro');
@@ -3853,6 +4174,8 @@ function initSettingsSections() {
       fold.style.display = fold.dataset.settingsGroup === state.settingsSection ? '' : 'none';
     });
     if (intro) intro.innerHTML = `<strong>${meta[0]}</strong><span>${meta[1]}</span>`;
+    const savebar = document.getElementById('settings-savebar');
+    if (savebar) savebar.style.display = state.settingsSection === 'personal' ? 'none' : '';
   };
   buttons.forEach(button => button.addEventListener('click', () => {
     state.settingsSection = button.dataset.settingsSection;
@@ -3861,6 +4184,105 @@ function initSettingsSections() {
   apply();
 }
 
+
+
+/* ===== 下拉多选 ===== */
+function initMultiSelects() {
+  const defs = [
+    { trigger: '#ms-content-trigger', menu: '#ms-content-menu', label: '#ms-content-label', items: '#notify-content-summary, #notify-content-details, #notify-content-errors, #notify-content-time' },
+    { trigger: '#ms-events-trigger', menu: '#ms-events-menu', label: '#ms-events-label', items: '.notify-event' },
+  ];
+  defs.forEach(function (def) {
+    const trigger = $(def.trigger);
+    const menu = $(def.menu);
+    const label = $(def.label);
+    if (!trigger || !menu || !label) return;
+    const sync = function () {
+      const names = $$(def.items).filter(function (el) { return el.checked; }).map(function (el) {
+        const row = el.closest('.ms-item, .check-inline');
+        if (!row) return el.dataset.event || '';
+        const copy = row.cloneNode(true);
+        const input = copy.querySelector('input');
+        if (input) input.remove();
+        return copy.textContent.trim();
+      }).filter(Boolean);
+      label.textContent = names.length ? names.join('、') : '未选择';
+      label.classList.toggle('is-empty', names.length === 0);
+    };
+    trigger.addEventListener('click', function (event) {
+      event.stopPropagation();
+      const open = menu.classList.toggle('open');
+      trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    $$(def.items).forEach(function (el) { el.addEventListener('change', sync); });
+    document.addEventListener('click', function (event) {
+      if (!menu.contains(event.target) && !trigger.contains(event.target)) menu.classList.remove('open');
+    });
+    sync();
+  });
+}
+
+
+/* ===== 开关行：开关在前，说明折叠 ===== */
+function enhanceSwitchRows() {
+  const content = document.getElementById('settings-content');
+  if (!content) return;
+  [...content.querySelectorAll('.check')].forEach(check => {
+    const field = check.closest('.field');
+    if (!field || field.dataset.switchRow) return;
+    const switchEl = check.querySelector('.switch');
+    if (!switchEl) return;
+    const titleEl = [...field.children].find(el => el !== check && el.tagName === 'SPAN' && !el.classList.contains('switch'));
+    if (!titleEl) return;
+    const descEl = [...check.children].find(el => el !== switchEl);
+    field.dataset.switchRow = '1';
+    field.classList.add('switch-row');
+
+    const row = document.createElement('div');
+    row.className = 'switch-row-inner';
+    row.appendChild(switchEl);
+
+    const title = document.createElement('span');
+    title.className = 'switch-title';
+    title.textContent = titleEl.textContent.trim();
+    row.appendChild(title);
+
+    const descText = descEl ? descEl.textContent.trim() : '';
+    if (descText) {
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'switch-more';
+      more.textContent = '?';
+      more.setAttribute('aria-label', '查看说明');
+      const open = () => field.classList.add('desc-open');
+      const close = () => { if (!field.dataset.descPinned) field.classList.remove('desc-open'); };
+      more.addEventListener('mouseenter', open);
+      more.addEventListener('mouseleave', close);
+      more.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const nowPinned = !field.dataset.descPinned;
+        if (nowPinned) field.dataset.descPinned = '1'; else delete field.dataset.descPinned;
+        field.classList.toggle('desc-open', nowPinned);
+      });
+      row.appendChild(more);
+    }
+
+    const spacer = document.createElement('span');
+    spacer.className = 'switch-spacer';
+    row.appendChild(spacer);
+
+    field.appendChild(row);
+    titleEl.remove();
+    if (descText) {
+      const desc = document.createElement('div');
+      desc.className = 'switch-desc';
+      desc.textContent = descText;
+      field.appendChild(desc);
+    }
+    check.remove();
+  });
+}
 
 function renderSettingsSkeleton() {
   const skeletonCard = (title, rows = 3) => `<section class="card">
@@ -3989,11 +4411,6 @@ function renderSettingsPage() {
       <section class="card">
         <div class="section-title"><span class="ico">${icon('server')}</span><div><h3>服务与访问</h3><p>Web UI 监听地址、登录保护与代理</p></div></div>
         <div class="section-body">
-          <div class="settings-summary-row">
-            <span><b>监听</b><code>${esc(cfg.server.host)}:${cfg.server.port}</code></span>
-            <span><b>登录保护</b>${cfg.server.auth_enabled ? '<span class="badge badge-success">已开启</span>' : '<span class="badge">未开启</span>'}</span>
-            <span><b>访问令牌</b>${cfg.server.access_token ? '<span class="badge badge-info">已设置</span>' : '<span class="badge">未设置</span>'}</span>
-          </div>
           <details class="advanced-settings">
             <summary>高级设置</summary>
             <div class="form-grid">
@@ -4160,16 +4577,16 @@ function renderSettingsPage() {
               <option value="wecom" ${((cfg.notify || {}).type) === 'wecom' ? 'selected' : ''}>企业微信机器人</option>
             </select><span class="hint">自动识别企业微信机器人地址，否则按通用 JSON Webhook 发送。</span></label>
             <label class="field"><span>Webhook 地址</span><input class="input mono" id="set-webhook" value="${esc((cfg.notify || {}).webhook || '')}" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."></label>
-            <label class="field span-2"><span>推送内容</span><span class="check-row">
+            <label class="field span-2"><span>推送内容</span><div class="ms" data-ms="content"><button type="button" class="ms-trigger" id="ms-content-trigger"><span class="ms-label" id="ms-content-label">选择内容</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10l5 5 5-5"/></svg></button><div class="ms-menu" id="ms-content-menu">
               <label class="check-inline"><input type="checkbox" id="notify-content-summary" ${((cfg.notify || {}).content || ['summary','details','errors','time']).includes('summary') ? 'checked' : ''}>运行摘要</label>
               <label class="check-inline"><input type="checkbox" id="notify-content-details" ${((cfg.notify || {}).content || ['summary','details','errors','time']).includes('details') ? 'checked' : ''}>订阅明细</label>
               <label class="check-inline"><input type="checkbox" id="notify-content-errors" ${((cfg.notify || {}).content || ['summary','details','errors','time']).includes('errors') ? 'checked' : ''}>错误信息</label>
               <label class="check-inline"><input type="checkbox" id="notify-content-time" ${((cfg.notify || {}).content || ['summary','details','errors','time']).includes('time') ? 'checked' : ''}>时间</label>
-            </span><span class="hint">通知以纯文本发送；企业微信使用 text 消息，通用 Webhook 使用 text/plain。</span></label>
+            </div></div><span class="hint">通知以纯文本发送；企业微信使用 text 消息，通用 Webhook 使用 text/plain。</span></label>
           </div>
-          <label class="field span-2"><span>推送事件</span><span class="check-row">
-            ${[['run','运行汇总'],['added','添加至云下载'],['completed','下载完成'],['failed','下载失败'],['idle','摸鱼提醒'],['hourly','整点更新'],['wash','洗板完成']].map(([key,label]) => `<label class="check-inline"><input type="checkbox" class="notify-event" data-event="${key}" ${notifyEvents.includes(key) ? 'checked' : ''}>${label}</label>`).join('')}
-          </span><span class="hint">单独控制每种事件是否推送；关闭后该事件不会发送。</span></label>
+          <label class="field span-2"><span>推送事件</span><div class="ms" data-ms="events"><button type="button" class="ms-trigger" id="ms-events-trigger"><span class="ms-label" id="ms-events-label">选择事件</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10l5 5 5-5"/></svg></button><div class="ms-menu" id="ms-events-menu">
+            ${[['run','运行汇总'],['added','添加至云下载'],['completed','下载完成'],['failed','下载失败'],['idle','摸鱼提醒'],['hourly','整点更新'],['wash','洗版完成']].map(([key,label]) => `<label class="check-inline"><input type="checkbox" class="notify-event" data-event="${key}" ${notifyEvents.includes(key) ? 'checked' : ''}>${label}</label>`).join('')}
+          </div></div><span class="hint">单独控制每种事件是否推送；关闭后该事件不会发送。</span></label>
           <div class="form-grid">
             <label class="field span-2"><span>摸鱼提醒</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="notify-idle-enabled" ${(cfg.notify || {}).idle_enabled ? 'checked' : ''}><span></span></span><span>订阅超过指定天数没有更新时发送提醒</span></span></label>
             <label class="field"><span>未更新天数</span><input class="input" id="notify-idle-days" type="number" min="1" max="3650" value="${Number((cfg.notify || {}).idle_days || 7)}"><span class="hint">每天最多提醒一次。</span></label>
@@ -4197,8 +4614,6 @@ function renderSettingsPage() {
           <div class="kv">
             <div class="kv-row"><span>版本</span><code>v${esc(state.status ? state.status.version : '0.02')}</code></div>
             <div class="kv-row"><span>GitHub</span><a href="https://github.com/huohen92/anifeed" target="_blank" rel="noopener noreferrer">github.com/huohen92/anifeed</a></div>
-            <div class="kv-row"><span>Docker</span><code>huohen92/anifeed:0.02</code></div>
-            <div class="kv-row"><span>fnOS FPK</span><a href="https://github.com/huohen92/anifeed/releases/latest" target="_blank" rel="noopener noreferrer">GitHub Releases</a></div>
             <div class="kv-row"><span>许可</span><code>MIT</code></div>
           </div>
           <div class="notice" style="margin-top:14px">${icon('info')}<span>115 为主下载器；qBittorrent 为本地兜底下载器。</span></div>
@@ -4218,31 +4633,31 @@ function renderSettingsPage() {
       </section>
 
       <section class="card">
-        <div class="section-title"><span class="ico">${icon('heart')}</span><div><h3>喜好字幕组</h3><p>用于洗板保留顺序和自动备用字幕组</p></div></div>
+        <div class="section-title"><span class="ico">${icon('heart')}</span><div><h3>喜好字幕组</h3><p>用于洗版保留顺序和自动备用字幕组</p></div></div>
         <div class="section-body">
           <div class="field span-2"><span>字幕组优先级</span>
             <div id="lab-subgroup-priority" class="subgroup-priority"></div>
             <div class="field-row subgroup-add-row"><input class="input" id="lab-subgroup-add" placeholder="手动添加字幕组名称"><button class="btn btn-sm" type="button" id="lab-subgroup-add-btn">${icon('plus')}添加</button></div>
-            <span class="hint">左侧从上到下优先；用于洗板保留和自动备用字幕组。可把字幕组移到右侧不启用。</span>
-            <div class="notice" style="margin-top:8px">${icon('info')}<span>喜好字幕组依赖重命名后的标题包含字幕组名称。请确保重命名模板包含 <code>\${subgroup}</code>，否则洗板和自动备用无法识别字幕组。</span></div>
+            <span class="hint">左侧从上到下优先；用于洗版保留和自动备用字幕组。可把字幕组移到右侧不启用。</span>
+            <div class="notice" style="margin-top:8px">${icon('info')}<span>喜好字幕组依赖重命名后的标题包含字幕组名称。请确保重命名模板包含 <code>\${subgroup}</code>，否则洗版和自动备用无法识别字幕组。</span></div>
             ${renameHasSubgroup ? '' : `<div class="notice" style="margin-top:8px">${icon('alert')}<span>当前重命名模板不包含 <code>\${subgroup}</code>，喜好字幕组可能无法生效。</span></div>`}
           </div>
         </div>
       </section>
 
       <section class="card">
-        <div class="section-title"><span class="ico">${icon('trash')}</span><div><h3>洗板</h3><p>按下载记录清理多个文件夹中的重复剧集</p></div></div>
+        <div class="section-title"><span class="ico">${icon('trash')}</span><div><h3>洗版</h3><p>按下载记录清理多个文件夹中的重复剧集</p></div></div>
         <div class="section-body">
-          <label class="field span-2"><span>启用洗板</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-wash" ${(cfg.lab || {}).wash_enabled ? 'checked' : ''}><span></span></span><span>优先保留喜好字幕组；都不在喜好列表时保留简体且体积更大的版本</span></span></label>
-          <label class="field"><span>洗板模式</span><select class="select" id="set-lab-wash-mode">
+          <label class="field span-2"><span>启用洗版</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-wash" ${(cfg.lab || {}).wash_enabled ? 'checked' : ''}><span></span></span><span>优先保留喜好字幕组；都不在喜好列表时保留简体且体积更大的版本</span></span></label>
+          <label class="field"><span>洗版模式</span><select class="select" id="set-lab-wash-mode">
             <option value="safe" ${((cfg.lab || {}).wash_mode || 'safe') === 'safe' ? 'selected' : ''}>安全模式：只处理有下载记录的文件</option>
             <option value="full" ${((cfg.lab || {}).wash_mode || '') === 'full' ? 'selected' : ''}>完整模式：扫描文件夹内所有可识别剧集</option>
           </select><span class="hint">安全模式不会碰没有下载记录的文件。</span></label>
           <div class="form-grid">
-            <label class="field"><span>定时洗板</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-wash-schedule" ${(cfg.lab || {}).wash_schedule_enabled ? 'checked' : ''}><span></span></span><span>按间隔自动执行洗板</span></span></label>
+            <label class="field"><span>定时洗版</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-wash-schedule" ${(cfg.lab || {}).wash_schedule_enabled ? 'checked' : ''}><span></span></span><span>按间隔自动执行洗版</span></span></label>
             <label class="field"><span>间隔（分钟）</span><input class="input" id="set-lab-wash-interval" type="number" min="1" max="100000" value="${Number((cfg.lab || {}).wash_interval_minutes || 1440)}"><span class="hint">默认 1440 分钟，即每天一次。</span></label>
           </div>
-          <div class="field span-2"><span>洗板文件夹</span><div class="lab-folder-list" id="lab-wash-folders"></div><div class="field-row" style="margin-top:8px"><button class="btn btn-sm" type="button" id="lab-add-wash-folder">${icon('plus')}添加文件夹</button><button class="btn btn-sm btn-danger" type="button" id="lab-wash-now">${icon('trash')}立即洗板</button><span class="hint">先扫描预览，再确认删除；会发送逐文件删除通知。</span></div></div>
+          <div class="field span-2"><span>洗版文件夹</span><div class="lab-folder-list" id="lab-wash-folders"></div><div class="field-row" style="margin-top:8px"><button class="btn btn-sm" type="button" id="lab-add-wash-folder">${icon('plus')}添加文件夹</button><button class="btn btn-sm btn-danger" type="button" id="lab-wash-now">${icon('trash')}立即洗版</button><span class="hint">先扫描预览，再确认删除；会发送逐文件删除通知。</span></div></div>
         </div>
       </section>
 
@@ -4256,8 +4671,77 @@ function renderSettingsPage() {
           <div class="field span-2"><div class="notice">${icon('info')}<span>优先级：先执行「跳过使用集数偏移的番剧」；跳过命中后不会自动添加备用 RSS，也不会计算偏移。未跳过时才由「自动校正备用 RSS 偏移」计算季数和偏移。</span></div></div>
           <label class="field"><span>偏移匹配样本数</span><div class="field-row"><input class="input" id="set-lab-auto-offset-samples" type="number" min="1" max="20" value="${Number((cfg.lab || {}).auto_offset_samples || 3)}"><button class="help-dot" type="button" id="auto-offset-samples-help" title="查看说明">?</button></div></label>
           <label class="field span-2"><span>自动应用规则</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-apply" ${(cfg.lab || {}).auto_apply_rules ? 'checked' : ''}><span></span></span><span>自动添加的备用字幕组使用自动应用最佳规则</span></span></label>
-          <label class="field span-2"><span>显示表单提示</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-hide-hints" ${!(cfg.lab || {}).hide_hints ? 'checked' : ''}><span></span></span><span>关闭后隐藏字段下方说明文字；? / ! 帮助入口仍然保留</span></span></label>
+          <label class="field span-2"><span>显示表单提示</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-hide-hints" ${!(cfg.lab || {}).hide_hints ? 'checked' : ''}><span></span></span><span>关闭后隐藏字段说明文字与 ? / ! 帮助入口（给熟练用户的清爽模式）</span></span></label>
           <div class="notice">${icon('info')}<span>以上为实验性选项，先保存配置；完整执行逻辑会在后续版本接入。</span></div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="section-title"><span class="ico">${icon('image')}</span><div><h3>个性化</h3><p>背景、玻璃效果、强调色与导航配色</p></div></div>
+        <div class="section-body">
+          <div class="notice">${icon('info')}<span>视觉效果保存在本机浏览器；背景图片上传到服务器，可分别管理电脑端和移动端，修改即时生效。</span></div>
+          <div class="af-blocks">
+          <div class="af-block">
+            <div class="af-block-title">背景图片 <small>上传到服务器；电脑端和移动端分别管理</small></div>
+            <div class="af-device-tabs" id="af-bg-device">
+              <button type="button" data-device="desktop">电脑端</button>
+              <button type="button" data-device="mobile">移动端</button>
+            </div>
+            <div class="af-row">
+              <input class="input" id="af-bg-url" placeholder="https://example.com/bg.jpg 或 API 地址">
+              <button class="btn btn-sm" id="af-bg-apply" type="button">应用</button>
+              <button class="btn btn-sm" id="af-bg-upload" type="button">${icon('upload')}批量上传</button>
+              <button class="btn btn-sm btn-danger" id="af-bg-clear" type="button">清除选择</button>
+              <input type="file" id="af-bg-file" accept="image/*" multiple hidden>
+            </div>
+            <div class="af-row af-bg-mode-row">
+              <select class="select" id="af-bg-mode"><option value="single">显示指定图片</option><option value="random">随机显示已上传图片</option><option value="none">不显示背景</option></select>
+              <span class="af-hint" id="af-bg-count">0 张图片</span>
+            </div>
+            <div class="af-bg-gallery" id="af-bg-gallery"></div>
+            <div class="af-bg-preview" id="af-bg-preview">未设置背景</div>
+            <div class="af-hint">图片保存在服务器；电脑端和移动端可使用不同背景。建议单张不超过 10MB。</div>
+          </div>
+          <div class="af-block">
+            <div class="af-block-title">玻璃效果 <small>设置背景图后自动启用</small></div>
+            <div class="af-grid">
+              <label class="field"><span>背景模糊 <span class="af-slider-value" id="af-blur-val">14px</span></span><input class="af-slider" id="af-blur" type="range" min="0" max="30" step="1"></label>
+              <label class="field"><span>面板不透明度 <span class="af-slider-value" id="af-alpha-val">72%</span></span><input class="af-slider" id="af-alpha" type="range" min="35" max="100" step="1"></label>
+            </div>
+          </div>
+          <div class="af-block">
+            <div class="af-block-title">圆角与悬浮 <small>卡片、按钮、输入框统一生效</small></div>
+            <div class="af-grid">
+              <label class="field"><span>圆角 <span class="af-slider-value" id="af-radius-val">16px</span></span><input class="af-slider" id="af-radius" type="range" min="4" max="28" step="1"></label>
+              <label class="field"><span>悬浮阴影 <span class="af-slider-value" id="af-elev-val">45%</span></span><input class="af-slider" id="af-elev" type="range" min="0" max="100" step="1"></label>
+            </div>
+          </div>
+          <div class="af-block">
+            <div class="af-block-title">导航配色 <small>侧边栏底色，和内容区区分开</small></div>
+            <div class="af-swatches" id="af-nav"></div>
+          </div>
+          <div class="af-block">
+            <div class="af-block-title">强调色 <small>链接、激活图标与重点标记</small></div>
+            <div class="af-swatches" id="af-accent"></div>
+          </div>
+          <div class="af-block">
+            <div class="af-block-title">主题模式</div>
+            <div class="af-seg" id="af-mode">
+              <button type="button" data-mode="light">浅色</button>
+              <button type="button" data-mode="dark">深色</button>
+              <button type="button" data-mode="auto">跟随系统</button>
+            </div>
+          </div>
+          <div class="af-block">
+            <div class="af-block-title">导入 / 导出 <small>主题配置可带到其他设备</small></div>
+            <div class="af-row">
+              <button class="btn btn-sm" id="af-export-2" type="button">${icon('download')}导出主题</button>
+              <button class="btn btn-sm" id="af-import" type="button">${icon('upload')}导入 JSON</button>
+              <input type="file" id="af-import-file" accept="application/json,.json" hidden>
+              <button class="btn btn-sm btn-danger" id="af-reset" type="button">恢复默认</button>
+            </div>
+            <div class="af-hint" id="af-io-hint">「导出设计」导出的是主题 JSON（背景图、模糊、配色、导航色、明暗模式），与下方导入对应。</div>
+          </div>
+          </div>
         </div>
       </section>
     </div>`;
@@ -4283,13 +4767,12 @@ function renderSettingsPage() {
           <button data-settings-section="organize">整理与命名</button>
           <button data-settings-section="subgroups">字幕组</button>
           <button data-settings-section="notify">通知</button>
-          <button data-settings-section="advanced">高级</button>
+          <button data-settings-section="personal">个性化</button>
           <button data-settings-section="about">关于</button>
         </div>
         <div class="settings-section-intro" id="settings-section-intro"></div>` : ''}
         <div id="settings-content">${state.settingsTab === 'form' ? formTab : rawTab}</div>
         <div class="sticky-save" id="settings-savebar">
-          <span class="dirty" id="dirty-hint">所有修改在点击保存后写入 config.toml</span>
           <span class="spacer"></span>
           <button class="btn" id="settings-cancel">放弃修改</button>
           <button class="btn btn-primary" id="settings-save-2">${icon('save')}保存配置</button>
@@ -4299,6 +4782,9 @@ function renderSettingsPage() {
 
   initPriorityEditor(cfg);
   initSettingsSections();
+  initMultiSelects();
+  enhanceSwitchRows();
+  initPersonalization();
   hydrateFolderNames();
   renderLabSubgroupPriority();
   renderLabWashFolders();
@@ -4377,7 +4863,7 @@ function renderSettingsPage() {
           renderLabWashFolders();
           markDirty();
         }
-      }, '选择洗板文件夹');
+      }, '选择洗版文件夹');
     });
     $('#set-final-cid-pick').addEventListener('click', () => {
       openFolderPicker(({ cid, path }) => {
@@ -4647,7 +5133,7 @@ function renderLabWashFolders() {
   const box = $('#lab-wash-folders');
   if (!box) return;
   if (!state.labWashFolders) state.labWashFolders = [];
-  box.innerHTML = state.labWashFolders.map((item, index) => `<span class="lab-folder-chip"><span>${esc(item.name || '已选择文件夹')}</span><button type="button" data-lab-folder-remove="${index}" title="移除">${icon('close')}</button></span>`).join('') || '<span class="hint">还没有添加洗板文件夹</span>';
+  box.innerHTML = state.labWashFolders.map((item, index) => `<span class="lab-folder-chip"><span>${esc(item.name || '已选择文件夹')}</span><button type="button" data-lab-folder-remove="${index}" title="移除">${icon('close')}</button></span>`).join('') || '<span class="hint">还没有添加洗版文件夹</span>';
   box.querySelectorAll('[data-lab-folder-remove]').forEach(button => button.addEventListener('click', () => {
     state.labWashFolders.splice(Number(button.dataset.labFolderRemove), 1);
     renderLabWashFolders(); markDirty();
@@ -4663,7 +5149,7 @@ function renderLabWashFolders() {
 
 async function openWashPreview() {
   if (state.dirty) {
-    toast('请先保存实验室配置，再执行洗板', 'error');
+    toast('请先保存实验室配置，再执行洗版', 'error');
     return;
   }
   try {
@@ -4676,7 +5162,7 @@ async function openWashPreview() {
       ${(group.delete || []).map(file => `<div class="wash-delete"><span>删除：<code>${esc(file.path)}</code></span><span class="hint">${esc(file.reason || '')}</span></div>`).join('')}
     </div>`).join('');
     openModal({
-      title: '洗板预览',
+      title: '洗版预览',
       subtitle: `${data.mode === 'full' ? '完整模式' : '安全模式'} · 扫描 ${data.scanned} 个文件 · 发现 ${groups.length} 组重复`,
       size: 'rules',
       body: `<div class="wash-preview">${groups.length ? rows : '<div class="empty" style="padding:26px"><span class="hint">没有发现需要删除的重复剧集。</span></div>'}</div>`,
@@ -4688,7 +5174,7 @@ async function openWashPreview() {
           try {
             const result = await api('/api/lab/wash', { method: 'POST', body: { dry_run: false, mode } });
             close();
-            toast(`洗板完成：删除 ${result.deleted || 0} 个文件，失败 ${result.failed || 0} 个`, result.failed ? 'error' : 'success', 5200);
+            toast(`洗版完成：删除 ${result.deleted || 0} 个文件，失败 ${result.failed || 0} 个`, result.failed ? 'error' : 'success', 5200);
           } catch (err) {
             toast(err.message, 'error', 5200);
             setLoading(button, false);
@@ -5010,6 +5496,7 @@ async function startApp() {
   await loadStatus();
   hideTokenGate();
   renderRoute();
+  syncAINav();
 }
 
 function showAuthGate(auth) {
@@ -5055,6 +5542,11 @@ async function boot() {
 
 $('#auth-form').addEventListener('submit', async event => {
   event.preventDefault();
+  if (state.authPending) return;
+  state.authPending = true;
+  const submitBtn = $('#auth-submit');
+  if (submitBtn) submitBtn.disabled = true;
+  try {
   const auth = await api('/api/auth/status').catch(() => ({}));
   const setup = !auth.configured;
   const username = $('#auth-user').value.trim();
@@ -5080,6 +5572,11 @@ $('#auth-form').addEventListener('submit', async event => {
   } catch (err) {
     error.textContent = err.message || '登录失败';
     error.classList.remove('hidden');
+    toast(error.textContent, 'error', 4200);
+  }
+  } finally {
+    state.authPending = false;
+    if (submitBtn) submitBtn.disabled = false;
   }
 });
 
@@ -5105,3 +5602,303 @@ $('#token-form').addEventListener('submit', async event => {
 });
 
 boot();
+
+/* ===== 个性化设置：绑定与持久化 ===== */
+function initPersonalization() {
+  const T = window.AniFeedTheme;
+  if (!T) return;
+  const $id = id => document.getElementById(id);
+  const ACCENTS = [['#2563eb', '云蓝'], ['#a2431b', '赭石'], ['#1a1916', '墨黑'], ['#0f6b5c', '松绿'], ['#245c8a', '藏蓝'], ['#8f3a5c', '绛紫'], ['#8a6a2f', '鎏金'], ['#b3342a', '朱红'], ['#4a6b3d', '竹青'], ['#33557f', '靛蓝'], ['#6a5a78', '灰紫'], ['#6d4b33', '茶褐'], ['#4a6068', '青灰']];
+  const hint = (msg, isErr) => {
+    const el = $id('af-io-hint');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.style.color = isErr ? 'var(--danger)' : 'var(--muted)';
+  };
+  const save = patch => {
+    try {
+      T.save(Object.assign({}, T.read(), patch));
+    } catch (e) {
+      hint('保存失败：' + (e && e.message ? e.message : '图片可能过大'), true);
+      return false;
+    }
+    draw();
+    return true;
+  };
+
+  function draw() {
+    const t = T.read();
+
+    const navBox = $id('af-nav');
+    if (navBox) {
+      navBox.innerHTML = Object.entries(T.NAV_PRESETS).map(([key, v]) =>
+        `<button type="button" class="af-swatch af-swatch-nav ${t.nav === key ? 'is-active' : ''}" data-nav="${key}" title="${v.label}" style="background:${v.light}"></button>`).join('');
+      navBox.onclick = ev => {
+        const b = ev.target.closest('[data-nav]');
+        if (!b) return;
+        save({ nav: b.dataset.nav });
+      };
+    }
+
+    const accBox = $id('af-accent');
+    if (accBox) {
+      accBox.innerHTML = ACCENTS.map(([c, name]) =>
+        `<button type="button" class="af-swatch ${t.accent.toLowerCase() === c ? 'is-active' : ''}" data-accent="${c}" title="${name}" style="background:${c}"></button>`).join('')
+        + `<input type="color" class="af-swatch-custom" id="af-accent-custom" value="${t.accent}" title="自定义颜色">`;
+      accBox.onclick = ev => {
+        const b = ev.target.closest('[data-accent]');
+        if (!b) return;
+        save({ accent: b.dataset.accent });
+      };
+      const custom = $id('af-accent-custom');
+      if (custom) custom.oninput = () => save({ accent: custom.value });
+    }
+
+    const modeBox = $id('af-mode');
+    if (modeBox) {
+      const mode = T.read().mode;
+      modeBox.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('is-active', b.dataset.mode === mode));
+      modeBox.onclick = ev => {
+        const b = ev.target.closest('[data-mode]');
+        if (!b) return;
+        save({ mode: b.dataset.mode });
+      };
+    }
+
+    const radius = $id('af-radius');
+    if (radius) {
+      const r = t.radius === undefined ? T.DEFAULTS.radius : t.radius;
+      radius.value = r;
+      $id('af-radius-val').textContent = r + 'px';
+      radius.oninput = () => { $id('af-radius-val').textContent = radius.value + 'px'; save({ radius: Number(radius.value) }); };
+    }
+    const elev = $id('af-elev');
+    if (elev) {
+      const e = t.elevation === undefined ? T.DEFAULTS.elevation : t.elevation;
+      elev.value = e;
+      $id('af-elev-val').textContent = e + '%';
+      elev.oninput = () => { $id('af-elev-val').textContent = elev.value + '%'; save({ elevation: Number(elev.value) }); };
+    }
+
+    const blur = $id('af-blur');
+    if (blur) {
+      blur.value = t.blur;
+      $id('af-blur-val').textContent = t.blur + 'px';
+      blur.oninput = () => { $id('af-blur-val').textContent = blur.value + 'px'; save({ blur: Number(blur.value) }); };
+    }
+    const alpha = $id('af-alpha');
+    if (alpha) {
+      const pct = Math.round(t.alpha * 100);
+      alpha.value = pct;
+      $id('af-alpha-val').textContent = pct + '%';
+      alpha.oninput = () => { $id('af-alpha-val').textContent = alpha.value + '%'; save({ alpha: Number(alpha.value) / 100 }); };
+    }
+
+    const prev = $id('af-bg-preview');
+    if (prev) {
+      if (t.bgImage) {
+        prev.style.backgroundImage = `url("${t.bgImage}")`;
+        prev.classList.add('has-image');
+        prev.textContent = '';
+      } else {
+        prev.style.backgroundImage = '';
+        prev.classList.remove('has-image');
+        prev.textContent = '未设置背景';
+      }
+    }
+    const url = $id('af-bg-url');
+    if (url && !String(t.bgImage).startsWith('data:')) url.value = t.bgImage || '';
+    if (serverTheme) drawServer();
+  }
+
+  const applyUrl = async () => {
+    const url = $id('af-bg-url');
+    if (!url) return;
+    const value = url.value.trim();
+    if (!value) { hint('地址是空的：填写图片/API 地址再点应用；要清空背景请点「清除」', true); return; }
+    if (!/^https?:\/\//i.test(value) && !value.startsWith('data:')) {
+      hint('请填写 http(s) 图片地址，或使用「上传」', true);
+      return;
+    }
+    const btn = $id('af-bg-apply');
+    const label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '加载中…'; }
+    hint('正在检查图片…');
+    try {
+      const src = T.resolveSource ? await T.resolveSource(value) : value;
+      if (save({ bgImage: src })) {
+        hint(src === value ? '背景已应用' : '接口返回的是图片地址，已自动解析并应用');
+      }
+    } catch (e) {
+      hint('图片无法加载：' + (e && e.message ? e.message : '地址不可用') + '（已保留原背景）', true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = label; }
+    }
+  };
+  const bgApply = $id('af-bg-apply');
+  if (bgApply) bgApply.onclick = applyUrl;
+  const bgUrl = $id('af-bg-url');
+  if (bgUrl) bgUrl.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); applyUrl(); } });
+  const bgClear = $id('af-bg-clear');
+  if (bgClear) bgClear.onclick = async () => {
+    const u = $id('af-bg-url'); if (u) u.value = '';
+    save({ bgImage: '' });
+    if (serverTheme) {
+      serverTheme[bgDevice] = { mode: 'none', selected: '' };
+      await saveServer();
+    } else {
+      hint('背景已清除');
+    }
+  };
+  const bgUpload = $id('af-bg-upload');
+  const bgFile = $id('af-bg-file');
+  if (bgUpload && bgFile) {
+    bgUpload.onclick = () => bgFile.click();
+    bgFile.onchange = async () => {
+      const files = Array.from(bgFile.files || []);
+      if (!files.length) return;
+      hint('正在上传到服务器…');
+      try {
+        for (const file of files) {
+          if (file.size > 10 * 1024 * 1024) throw new Error(file.name + ' 超过 10MB');
+          const form = new FormData();
+          form.append('file', file);
+          const res = await fetch('/api/theme/upload?device=' + encodeURIComponent(bgDevice), { method: 'POST', body: form, headers: { accept: 'application/json' } });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || '上传失败');
+          serverTheme = data.theme;
+        }
+        bgFile.value = '';
+        applyServer(); drawServer();
+        hint('已上传 ' + files.length + ' 张图片');
+      } catch (e) { hint(e.message, true); bgFile.value = ''; }
+    };
+  }
+
+  let serverTheme = null;
+  let bgDevice = localStorage.getItem('anifeed_bg_device') || ((window.matchMedia && window.matchMedia('(max-width: 860px)').matches) ? 'mobile' : 'desktop');
+  const serverImages = () => (serverTheme && serverTheme.images && serverTheme.images[bgDevice]) || [];
+  const serverDevice = () => (serverTheme && serverTheme[bgDevice]) || { mode: 'single', selected: '' };
+  const pickServerImage = () => {
+    const images = serverImages();
+    if (!images.length) return null;
+    const cfg = serverDevice();
+    if (cfg.mode === 'random') return images[Math.floor(Math.random() * images.length)];
+    return images.find(item => item.name === cfg.selected) || images[0];
+  };
+  const applyServer = () => {
+    if (!serverTheme) return;
+    window.AniFeedTheme.setServerTheme(serverTheme);
+    const picked = pickServerImage();
+    const prev = $id('af-bg-preview');
+    if (prev) {
+      if (picked) { prev.style.backgroundImage = `url("${picked.url}")`; prev.classList.add('has-image'); prev.textContent = ''; }
+      else { prev.style.backgroundImage = ''; prev.classList.remove('has-image'); prev.textContent = '未设置背景'; }
+    }
+  };
+  const saveServer = async () => {
+    if (!serverTheme) return;
+    try {
+      const resp = await api('/api/theme', { method: 'PUT', body: { desktop: serverTheme.desktop, mobile: serverTheme.mobile } });
+      serverTheme = resp;
+      applyServer();
+      drawServer();
+      hint('背景设置已保存到服务器');
+    } catch (e) { hint('保存背景失败：' + e.message, true); }
+  };
+  function drawServer() {
+    const tabs = $id('af-bg-device');
+    if (tabs) {
+      tabs.querySelectorAll('[data-device]').forEach(btn => btn.classList.toggle('active', btn.dataset.device === bgDevice));
+    }
+    if (!serverTheme) return;
+    const images = serverImages();
+    const cfg = serverDevice();
+    const mode = $id('af-bg-mode');
+    if (mode) { mode.value = cfg.mode || 'single'; mode.onchange = async () => { serverTheme[bgDevice] = { mode: mode.value, selected: cfg.selected || '' }; await saveServer(); }; }
+    const count = $id('af-bg-count');
+    if (count) count.textContent = `${images.length} 张图片`;
+    const gallery = $id('af-bg-gallery');
+    if (!gallery) return;
+    if (!images.length) {
+      gallery.innerHTML = '<div class="af-bg-empty">还没有上传背景图片</div>';
+    } else {
+      const selected = cfg.mode === 'single' ? (cfg.selected || images[0].name) : '';
+      gallery.innerHTML = images.map(img => `<div class="af-bg-item ${img.name === selected ? 'active' : ''}"><img src="${img.url}" alt=""><div class="af-bg-item-actions"><button type="button" class="btn btn-sm ${img.name === selected ? 'btn-primary' : ''}" data-bg-pick="${img.name}">${img.name === selected ? '使用中' : '使用'}</button><button type="button" class="btn btn-sm btn-ghost" data-bg-remove="${img.name}" title="删除">×</button></div></div>`).join('');
+      gallery.onclick = async event => {
+        const pick = event.target.closest('[data-bg-pick]');
+        const del = event.target.closest('[data-bg-remove]');
+        if (pick) {
+          serverTheme[bgDevice] = { mode: 'single', selected: pick.dataset.bgPick };
+          await saveServer();
+        }
+        if (del) {
+          try {
+            serverTheme = await api('/api/theme/image/delete?name=' + encodeURIComponent(del.dataset.bgRemove), { method: 'DELETE' });
+            applyServer(); drawServer(); hint('图片已删除');
+          } catch (e) { hint('删除失败：' + e.message, true); }
+        }
+      };
+    }
+    applyServer();
+  }
+  async function loadServer() {
+    try {
+      serverTheme = await api('/api/theme');
+      window.AniFeedTheme.setServerTheme(serverTheme);
+      drawServer();
+    } catch (e) { hint('读取服务器背景失败：' + e.message, true); }
+  }
+  const doExport = () => {
+    const data = T.exportDesign();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'anifeed-theme-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+    hint('已导出主题 JSON');
+  };
+  ['af-export', 'af-export-2'].forEach(id => { const b = $id(id); if (b) b.onclick = doExport; });
+
+  const importBtn = $id('af-import');
+  const importFile = $id('af-import-file');
+  if (importBtn && importFile) {
+    importBtn.onclick = () => importFile.click();
+    importFile.onchange = () => {
+      const file = importFile.files && importFile.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          T.importDesign(String(reader.result));
+          draw();
+          hint('已导入主题：' + file.name);
+        } catch (e) {
+          hint('导入失败：' + (e && e.message ? e.message : '文件格式不正确'), true);
+        }
+        importFile.value = '';
+      };
+      reader.onerror = () => hint('读取文件失败', true);
+      reader.readAsText(file);
+    };
+  }
+
+  const reset = $id('af-reset');
+  if (reset) reset.onclick = () => { T.reset(); draw(); hint('已恢复默认主题'); };
+
+  const deviceTabs = $id('af-bg-device');
+  if (deviceTabs) {
+    deviceTabs.onclick = event => {
+      const btn = event.target.closest('[data-device]');
+      if (!btn || btn.dataset.device === bgDevice) return;
+      bgDevice = btn.dataset.device;
+      localStorage.setItem('anifeed_bg_device', bgDevice);
+      drawServer();
+    };
+  }
+
+  draw();
+  loadServer();
+}

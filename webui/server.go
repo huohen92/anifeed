@@ -147,6 +147,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/feeds/preview/delete-history", s.handleDeletePreviewHistory)
 	mux.HandleFunc("GET /api/tmdb/search", s.handleTMDBSearch)
 	mux.HandleFunc("GET /api/tmdb/detail", s.handleTMDBDetail)
+	mux.HandleFunc("GET /api/tmdb/episodes", s.handleTMDBEpisodes)
 	mux.HandleFunc("GET /api/tmdb/auto", s.handleTMDBAuto)
 	mux.HandleFunc("GET /api/rules", s.handleRules)
 	mux.HandleFunc("GET /api/browse/list", s.handleBrowseList)
@@ -181,6 +182,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/ai/chat", s.handleAIChat)
 	mux.HandleFunc("/api/feeds/offset-suggest", s.handleOffsetSuggest)
 	mux.HandleFunc("/api/feeds/season-suggest", s.handleSeasonSuggest)
+	mux.HandleFunc("/api/theme", s.handleTheme)
+	mux.HandleFunc("/api/theme/upload", s.handleThemeUpload)
+	mux.HandleFunc("/api/theme/image", s.handleThemeImage)
+	mux.HandleFunc("/api/theme/image/delete", s.handleThemeDelete)
 	mux.HandleFunc("/api/ai/action", s.handleAIAction)
 
 	mux.Handle("/", staticHandler())
@@ -457,7 +462,7 @@ func (s *Server) withSecurity(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; img-src 'self' data: https: http:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'")
+			"default-src 'self'; img-src 'self' data: https: http:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: http:; frame-src 'self'; frame-ancestors 'self'")
 
 		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodDelete {
 			if origin := r.Header.Get("Origin"); origin != "" && r.Header.Get("Sec-Fetch-Site") != "same-origin" {

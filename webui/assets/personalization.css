@@ -1,0 +1,161 @@
+/* ===== AniFeed 个性化层：柔和白基底 / 导航区分 / 玻璃背景 / 设置面板样式 ===== */
+
+:root {
+  --bg: #fbfbfa;
+  --bg-soft: #f6f6f4;
+  --surface: #ffffff;
+  --surface-2: #f9f9f7;
+  --surface-3: #f2f2ef;
+  --border: #e8e7e3;
+  --border-strong: #dbd9d3;
+  --text: #16171a;
+  --text-2: #3b3d42;
+  --muted: #6a6c72;
+  --faint: #989aa0;
+
+  --af-nav-bg: #f3f3f0;
+  --af-nav-border: #e6e5e0;
+  --af-accent: #a2431b;
+  --af-blur: 14px;
+  --af-alpha: .72;
+  --af-bg-image: none;
+}
+
+[data-theme="dark"] {
+  --bg: #131313;
+  --bg-soft: #181818;
+  --surface: #1d1d1d;
+  --surface-2: #222222;
+  --surface-3: #292929;
+  --border: #333333;
+  --border-strong: #434343;
+  --text: #ececec;
+  --text-2: #c6c6c6;
+  --muted: #9d9d9d;
+  --faint: #7a7a7a;
+
+  --af-nav-bg: #0f0f0f;
+  --af-nav-border: #262626;
+  --af-accent: #d98a5a;
+}
+
+/* ---------- 导航与内容区分 ---------- */
+.sidebar {
+  background: var(--af-nav-bg);
+  border-right: 1px solid var(--af-nav-border);
+}
+.nav-item:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.nav-item.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+[data-theme="dark"] .nav-item.active { background: var(--surface-2); }
+
+/* 每个导航项一个低饱和识别色 */
+.nav-item[data-route="dashboard"] .nav-icon { color: #6f86a6; }
+.nav-item[data-route="feeds"] .nav-icon { color: #b07a3c; }
+.nav-item[data-route="tasks"] .nav-icon { color: #4f8a6a; }
+.nav-item[data-route="history"] .nav-icon { color: #8a6b9e; }
+.nav-item[data-route="logs"] .nav-icon { color: #6b7b86; }
+.nav-item[data-route="settings"] .nav-icon { color: #7d7f86; }
+.nav-item[data-route="ai"] .nav-icon { color: #ac5f5f; }
+.nav-item.active .nav-icon { color: var(--af-accent); }
+[data-theme="dark"] .nav-item[data-route="dashboard"] .nav-icon { color: #8ba3c4; }
+[data-theme="dark"] .nav-item[data-route="feeds"] .nav-icon { color: #c99255; }
+[data-theme="dark"] .nav-item[data-route="tasks"] .nav-icon { color: #6fae8b; }
+[data-theme="dark"] .nav-item[data-route="history"] .nav-icon { color: #a98cbd; }
+[data-theme="dark"] .nav-item[data-route="ai"] .nav-icon { color: #c47c7c; }
+
+a { color: var(--af-accent); }
+
+/* ---------- 背景图 + 玻璃 ---------- */
+html[data-af-bg="on"] body { background: transparent; }
+html[data-af-bg="on"] body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: -2;
+  background-image: var(--af-bg-image);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+html[data-af-bg="on"] body::after {
+  content: '';
+  position: fixed; inset: 0; z-index: -1;
+  background: color-mix(in srgb, var(--bg) 64%, transparent);
+}
+html[data-af-bg="on"][data-theme="dark"] body::after {
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+}
+
+html[data-af-glass="on"] .card,
+html[data-af-glass="on"] .sidebar,
+html[data-af-glass="on"] .topbar,
+html[data-af-glass="on"] .subtabs,
+html[data-af-glass="on"] .sticky-save,
+html[data-af-glass="on"] .modal,
+html[data-af-glass="on"] .settings-fold summary {
+  background: color-mix(in srgb, var(--surface) calc(var(--af-alpha) * 100%), transparent);
+  -webkit-backdrop-filter: blur(var(--af-blur)) saturate(1.06);
+  backdrop-filter: blur(var(--af-blur)) saturate(1.06);
+}
+html[data-af-glass="on"] .sidebar {
+  background: color-mix(in srgb, var(--af-nav-bg) calc(var(--af-alpha) * 100%), transparent);
+}
+html[data-af-glass="on"] .topbar { background: color-mix(in srgb, var(--bg) calc(var(--af-alpha) * 100%), transparent); }
+html[data-af-glass="on"] .nav-item.active { background: color-mix(in srgb, var(--surface) 80%, transparent); }
+
+/* ---------- 个性化设置面板 ---------- */
+.af-block { border-top: 1px solid var(--border); padding: 14px 0; }
+.af-block:first-child { border-top: 0; padding-top: 4px; }
+.af-block:last-child { padding-bottom: 2px; }
+.af-block-title { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.af-block-title small { font-weight: 400; color: var(--muted); font-size: 11px; }
+.af-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.af-row .input { flex: 1 1 170px; min-width: 140px; }
+.af-bg-preview {
+  margin-top: 10px; height: 92px; border: 1px dashed var(--border-strong); border-radius: 10px;
+  display: grid; place-items: center; color: var(--faint); font-size: 11.5px;
+  background-size: cover; background-position: center; overflow: hidden;
+}
+.af-bg-preview.has-image { border-style: solid; color: transparent; }
+.af-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.af-slider { width: 100%; accent-color: var(--af-accent); }
+.af-slider-value { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.af-swatches { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.af-swatch {
+  width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--border);
+  cursor: pointer; padding: 0; position: relative;
+}
+.af-swatch.is-active { outline: 2px solid var(--text); outline-offset: 2px; }
+.af-swatch-nav { width: 46px; }
+.af-swatch-custom { width: 40px; height: 30px; padding: 0 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.af-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.af-seg button {
+  border: 0; background: transparent; color: var(--muted); font-size: 12px;
+  padding: 7px 14px; cursor: pointer;
+}
+.af-seg button.is-active { background: var(--surface-3); color: var(--text); font-weight: 600; }
+.af-hint { font-size: 11px; color: var(--faint); margin-top: 6px; }
+
+/* 修正：背景层放到 html 上，避免负 z-index 伪元素被画布覆盖 */
+html[data-af-bg="on"] body::before,
+html[data-af-bg="on"] body::after { content: none; }
+html[data-af-bg="on"] {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--bg) 62%, transparent), color-mix(in srgb, var(--bg) 62%, transparent)),
+    var(--af-bg-image);
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+html[data-af-bg="on"][data-theme="dark"] {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--bg) 72%, transparent), color-mix(in srgb, var(--bg) 72%, transparent)),
+    var(--af-bg-image);
+}
+
+/* .main 原先是不透明背景，会盖住背景图 */
+html[data-af-glass="on"] .main,
+html[data-af-bg="on"] .main { background: transparent; }

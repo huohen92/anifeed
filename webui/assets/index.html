@@ -7,7 +7,9 @@
   <title>AniFeed</title>
   <meta name="description" content="AniFeed Web 控制台：管理 RSS 订阅、运行离线任务、查看 115 任务与历史记录。">
   <link rel="icon" type="image/png" href="/logo.png">
-  <link rel="stylesheet" href="/styles.css?v=0.03.4">
+  <link rel="stylesheet" href="/styles.css?v=0.03.6">
+  <link rel="stylesheet" href="/personalization.css?v=0.03.6">
+  <link rel="stylesheet" href="/settings-layout.css?v=0.03.6">
 </head>
 <body>
   <div class="app" id="app">
@@ -27,9 +29,6 @@
         <a class="nav-item" href="#/feeds" data-route="feeds">
           <span class="nav-icon" data-icon="rss"></span><span>订阅管理</span>
         </a>
-        <a class="nav-item" href="#/tasks" data-route="tasks">
-          <span class="nav-icon" data-icon="tasks"></span><span>离线任务</span>
-        </a>
         <a class="nav-item" href="#/history" data-route="history">
           <span class="nav-icon" data-icon="history"></span><span>历史记录</span>
         </a>
@@ -40,7 +39,7 @@
           <span class="nav-icon" data-icon="settings"></span><span>设置</span>
         </a>
         <a class="nav-item" href="#/ai" data-route="ai">
-          <span class="nav-icon" data-icon="info"></span><span>AI 助手</span>
+          <span class="nav-icon" data-icon="ai"></span><span>AI 助手</span>
         </a>
       </nav>
 
@@ -93,6 +92,7 @@
   </div>
 
   <div class="auth-gate hidden" id="auth-gate">
+    <p class="form-error hidden" id="auth-error"></p>
     <form class="auth-card" id="auth-form">
       <div class="auth-logo"><img src="/logo.png" alt="AniFeed"><strong>AniFeed</strong><small>RSS → 115 离线</small></div>
       <h2 id="auth-title" class="hidden"></h2>
@@ -101,7 +101,6 @@
       <label class="field"><span>密码</span><input class="input" id="auth-pass" type="password" autocomplete="current-password" required></label>
       <label class="field hidden" id="auth-confirm-field"><span>确认密码</span><input class="input" id="auth-confirm" type="password" autocomplete="new-password"></label>
       <label class="check auth-remember"><input type="checkbox" id="auth-remember">记住账号密码</label>
-      <p class="form-error hidden" id="auth-error"></p>
       <button class="btn btn-primary btn-block" id="auth-submit" type="submit">登录</button>
     </form>
   </div>
@@ -112,9 +111,10 @@
     <a href="#/tasks" data-mobile-route="tasks"><span data-icon="tasks"></span><span>任务</span></a>
     <a href="#/logs" data-mobile-route="logs"><span data-icon="logs"></span><span>日志</span></a>
     <a href="#/settings" data-mobile-route="settings"><span data-icon="settings"></span><span>设置</span></a>
-    <a href="#/ai" data-mobile-route="ai"><span data-icon="info"></span><span>AI</span></a>
+    <a href="#/ai" data-mobile-route="ai"><span data-icon="ai"></span><span>AI</span></a>
   </nav>
 
-  <script src="/app.js?v=0.03.4"></script>
+  <script src="/theme.js?v=0.03.6"></script>
+  <script src="/app.js?v=0.03.6"></script>
 </body>
 </html>

@@ -21,6 +21,7 @@ type tmdbResult struct {
 	Overview         string  `json:"overview"`
 	VoteAverage      float64 `json:"vote_average"`
 	NumberOfEpisodes int     `json:"number_of_episodes,omitempty"`
+	SeasonAirDate    string  `json:"season_air_date,omitempty"`
 	Poster           string  `json:"poster,omitempty"`
 }
 
@@ -200,6 +201,21 @@ func (s *Server) handleTMDBDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item.Poster = tmdbImageURL(cfg.TMDB.Image, item.PosterPath, "w500")
+	if mediaType == "tv" {
+		if raw := strings.TrimSpace(r.URL.Query().Get("season")); raw != "" {
+			if season, err := strconv.Atoi(raw); err == nil && season > 0 {
+				var seasonInfo struct {
+					AirDate string `json:"air_date"`
+				}
+				sv := url.Values{}
+				sv.Set("api_key", cfg.TMDB.APIKey)
+				sv.Set("language", "zh-CN")
+				if err := s.fetchTMDB(cfg.TMDB, "/3/tv/"+url.PathEscape(id)+"/season/"+strconv.Itoa(season), sv, &seasonInfo); err == nil {
+					item.SeasonAirDate = seasonInfo.AirDate
+				}
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, item)
 }
 
@@ -250,4 +266,32 @@ func (s *Server) fetchTMDBQuery(cfg *config.Config, path string, values map[stri
 		v.Set(key, value)
 	}
 	return s.fetchTMDB(cfg.TMDB, path, v, dst)
+}
+
+func (s *Server) handleTMDBEpisodes(w http.ResponseWriter, r *http.Request) {
+	cfg := s.configSnapshot()
+	if cfg == nil || strings.TrimSpace(cfg.TMDB.APIKey) == "" {
+		writeAPIError(w, http.StatusBadRequest, "请先在设置中填写 TmdbApiKey")
+		return
+	}
+	id := strings.TrimSpace(r.URL.Query().Get("id"))
+	if id == "" {
+		writeAPIError(w, http.StatusBadRequest, "缺少 TMDB ID")
+		return
+	}
+	episodes, err := s.tmdbEpisodes(cfg, id)
+	if err != nil {
+		writeAPIError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	type item struct {
+		Season  int    `json:"season"`
+		Episode int    `json:"episode"`
+		AirDate string `json:"air_date"`
+	}
+	out := make([]item, 0, len(episodes))
+	for _, ep := range episodes {
+		out = append(out, item{Season: ep.Season, Episode: ep.Episode, AirDate: ep.AirDate.Format("2006-01-02")})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"episodes": out})
 }
