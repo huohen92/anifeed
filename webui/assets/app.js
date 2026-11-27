@@ -995,7 +995,7 @@ function dashboardAnimeCard(feed, index) {
   const completed = !!update.completed;
   const disabled = !enabled || completed;
   return `<article class="anime-card ${disabled ? 'disabled' : ''}" data-dashboard-feed="${index}">
-    <div class="anime-poster ${cached && cached.cover ? 'has-image' : ''}" data-feed-cover data-index="${index}">
+    <div class="anime-poster" data-feed-cover data-index="${index}">
       <span class="poster-fallback"><img src="/logo.webp" alt="AniFeed"></span>
       <img class="poster-image" alt="${esc(cached ? cached.title || '' : '')}" ${cached && cached.cover ? `src="${esc(cached.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
       <span class="anime-badge">${completed ? '已完成' : disabled ? '未启用' : '追番中'}</span>
@@ -1378,18 +1378,27 @@ function applyFeedCover(el, data) {
   if (!img) return;
   img.alt = data.title || '';
   const sameSource = img.getAttribute('src') === data.cover;
-  const reveal = () => { if (img.naturalWidth > 0) el.classList.add('has-image'); };
+  const reveal = () => {
+    if (img.naturalWidth <= 0) return;
+    requestAnimationFrame(() => el.classList.add('has-image'));
+  };
+  const afterLoad = () => {
+    if (typeof img.decode === 'function') {
+      img.decode().then(reveal, reveal);
+    } else {
+      reveal();
+    }
+  };
   if (!sameSource) {
     el.classList.remove('has-image');
-    img.addEventListener('load', reveal, { once: true });
+    img.addEventListener('load', afterLoad, { once: true });
     img.addEventListener('error', () => el.classList.remove('has-image'), { once: true });
     img.src = data.cover;
-  } else if (el.classList.contains('has-image')) {
-    reveal();
+  } else if (img.complete) {
+    afterLoad();
   } else {
-    img.addEventListener('load', reveal, { once: true });
+    img.addEventListener('load', afterLoad, { once: true });
     img.addEventListener('error', () => el.classList.remove('has-image'), { once: true });
-    if (img.complete) reveal();
   }
   if (data.score > 0) {
     const score = $('.poster-score', el);
@@ -1445,7 +1454,7 @@ function feedCard(feed, index, completed = false) {
   const subgroup = subgroupLabel(feed.subgroup_name || urlSubgroupName(feed.url), feed.name);
   const quarter = quarterOf(feed) || '—';
   return `<article class="anime-card feed-manage-card ${disabled ? 'disabled' : ''}" title="${esc(feed.name)}">
-    <div class="anime-poster ${cachedCover && cachedCover.cover ? 'has-image' : ''}" data-feed-cover data-feed-poster data-index="${index}" data-source="${source.key}" title="点击编辑订阅">
+    <div class="anime-poster" data-feed-cover data-feed-poster data-index="${index}" data-source="${source.key}" title="点击编辑订阅">
       <span class="poster-fallback"><img src="/logo.webp" alt="AniFeed"></span>
       <img class="poster-image" alt="${esc(cachedCover ? cachedCover.title || '' : '')}" ${cachedCover && cachedCover.cover ? `src="${esc(cachedCover.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
       <span class="anime-badge">${completed ? '已完成' : disabled ? '未启用' : '追番中'}</span>
