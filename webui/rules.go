@@ -18,6 +18,7 @@ type ruleCategory struct {
 type groupRule struct {
 	ID          string `json:"id"`
 	Label       string `json:"label"`
+	Group       string `json:"group"`
 	Pattern     string `json:"pattern"`
 	Description string `json:"description,omitempty"`
 }
@@ -34,7 +35,7 @@ const rulesSourceURL = "https://github.com/jacksen168sub/AB_AR_exclude_regular_e
 func (s *Server) handleRules(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, rulesResponse{
 		Source:  rulesSourceURL,
-		Updated: "2024.10.15",
+		Updated: "2026.01.05",
 		Categories: []ruleCategory{
 			{
 				ID:    "language",
@@ -71,16 +72,26 @@ func (s *Server) handleRules(w http.ResponseWriter, _ *http.Request) {
 					{ID: "r2160", Label: "4K / 2160p", Pattern: `(?i)(?:2160p|4K|3840x2160)`, Description: "2160p / 4K"},
 				},
 			},
+			{
+				ID:    "codec",
+				Label: "编码 / 位深",
+				Options: []ruleOption{
+					{ID: "avc", Label: "AVC / H.264", Pattern: `(?i)(?:AVC|H\.?264)`, Description: "AVC / H.264，兼容性最好"},
+					{ID: "hevc", Label: "HEVC / H.265", Pattern: `(?i)(?:HEVC|H\.?265)`, Description: "HEVC / H.265，体积更小"},
+					{ID: "10bit", Label: "10bit", Pattern: `(?i)(?:10bit|10Bit|10BIT)`, Description: "10bit 位深"},
+				},
+			},
 		},
 		Groups: []groupRule{
-			{ID: "sakurato-cht-hard", Label: "桜都 · 繁体内嵌", Pattern: `(?i)^(?=.*\[桜都字幕组\])(?=.*(?:繁体内嵌|繁日内嵌)).*`, Description: "排除桜都繁体内嵌/繁日内嵌"},
-			{ID: "moemoe-cht", Label: "喵萌奶茶屋 · 繁体", Pattern: `(?i)^(?=.*喵萌奶茶屋)(?=.*(?:繁日双语|繁体))(?!.*LoliHouse).*`, Description: "排除喵萌繁体，保留 LoliHouse 合作版"},
-			{ID: "kitauji-cht-hard", Label: "北宇治 · 繁日内嵌", Pattern: `(?i)^(?=.*\[北宇治字幕组\])(?=.*(?:繁体内嵌|繁日内嵌)).*`, Description: "排除北宇治繁日内嵌"},
-			{ID: "mingy-cht-hard", Label: "MingY · 繁日内嵌", Pattern: `(?i)^(?=.*\[MingY\])(?=.*(?:繁体内嵌|繁日内嵌)).*`, Description: "排除 MingY 繁日内嵌"},
-			{ID: "bohuixunchun-cht-hard", Label: "拨雪寻春 · 繁日内嵌", Pattern: `(?i)^(?=.*\[❀拨雪寻春❀\])(?=.*繁日内嵌).*`, Description: "排除拨雪寻春繁日内嵌"},
+			{ID: "sakurato-cht-hard", Label: "桜都 · 繁体内嵌", Group: "桜都字幕组", Pattern: `(?i)^(?=.*\[桜都字幕组\])(?=.*(?:繁体内嵌|繁日内嵌)).*`, Description: "排除桜都繁体内嵌/繁日内嵌"},
+			{ID: "moemoe-cht", Label: "喵萌奶茶屋 · 繁体", Group: "喵萌奶茶屋", Pattern: `(?i)^(?=.*喵萌奶茶屋)(?=.*(?:繁日双语|繁体))(?!.*LoliHouse).*`, Description: "排除喵萌繁体，保留 LoliHouse 合作版"},
+			{ID: "kitauji-cht-hard", Label: "北宇治 · 繁日内嵌", Group: "北宇治字幕组", Pattern: `(?i)^(?=.*\[北宇治字幕组\])(?=.*(?:繁体内嵌|繁日内嵌)).*`, Description: "排除北宇治繁日内嵌"},
+			{ID: "mingy-cht-hard", Label: "MingY · 繁日内嵌", Group: "MingY", Pattern: `(?i)^(?=.*\[MingY\])(?=.*(?:繁体内嵌|繁日内嵌)).*`, Description: "排除 MingY 繁日内嵌"},
+			{ID: "bohuixunchun-cht-hard", Label: "拨雪寻春 · 繁日内嵌", Group: "拨雪寻春", Pattern: `(?i)^(?=.*\[❀拨雪寻春❀\])(?=.*繁日内嵌).*`, Description: "排除拨雪寻春繁日内嵌"},
 			{ID: "manmao-cht", Label: "漫猫/猫恋 · 繁日双语", Pattern: `(?i)^(?=.*(?:\[爱恋&漫猫字幕组\]|\[漫猫字幕社&猫恋汉化组\]))(?=.*繁日双语).*`, Description: "排除漫猫/猫恋繁日双语"},
-			{ID: "up21-not-bglobal", Label: "Up to 21°C · 非 B-Global", Pattern: `(?i)^(?=.*\[Up to 21\°C\])(?!.*\b(?:B-Global)\b).*`, Description: "排除 Up to 21°C 的 ABEMA/Baha/CR 源，保留 B-Global"},
-			{ID: "yuha-cht-hard", Label: "悠哈璃羽 · 繁日内嵌", Pattern: `(?i)^(?=.*悠哈璃羽字幕社)(?=.*繁日内嵌).*`, Description: "排除悠哈璃羽繁日内嵌"},
+			{ID: "sakurato-chs-hard", Label: "桜都 · 简日内嵌非60FPS", Group: "桜都字幕组", Pattern: `(?i)^(?=.*\[桜都字幕组\])(?=.*(?:简体内嵌|简日内嵌))(?!.*1080p@60FPS).*`, Description: "排除桜都简体内嵌/简日内嵌，但保留 1080p@60FPS"},
+			{ID: "up21-not-bglobal", Label: "Up to 21°C · 非 B-Global", Group: "Up to 21°C", Pattern: `(?i)^(?=.*\[Up to 21\°C\])(?!.*\b(?:B-Global)\b).*`, Description: "排除 Up to 21°C 的 ABEMA/Baha/CR 源，保留 B-Global"},
+			{ID: "yuha-cht-hard", Label: "悠哈璃羽 · 繁日内嵌", Group: "悠哈璃羽字幕社", Pattern: `(?i)^(?=.*悠哈璃羽字幕社)(?=.*繁日内嵌).*`, Description: "排除悠哈璃羽繁日内嵌"},
 		},
 	})
 }

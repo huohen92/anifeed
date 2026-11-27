@@ -69,7 +69,7 @@ func BuildRenameName(feedName, itemTitle string, opt RenameOptions) (string, err
 	itemTitle = strings.TrimSuffix(itemTitle, "+NCOPED")
 	itemTitle = strings.TrimSpace(itemTitle)
 	subgroup := strings.TrimSpace(opt.Subgroup)
-	if subgroup == "" {
+	if subgroup == "" || subgroup == "未知字幕组" {
 		subgroup = parseSubgroup(itemTitle)
 	}
 	feedName = cleanFeedTitle(feedName, subgroup)

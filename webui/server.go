@@ -1,6 +1,8 @@
 package webui
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"embed"
 	"errors"
@@ -60,6 +62,8 @@ type Server struct {
 	qrMu       sync.Mutex
 	qrSessions map[string]*qrSession
 
+	tmdbCacheMu          sync.Mutex
+	tmdbCache            map[string]tmdbEpisodesCacheEntry
 	coverMu              sync.Mutex
 	covers               map[string]coverEntry
 	weekdays             map[string]weekdayCacheEntry
@@ -80,8 +84,10 @@ type Server struct {
 	jobs            *jobManager
 	postProcessMu   sync.Mutex
 	backupMu        sync.Mutex
+	autoBackupMu    sync.Mutex
 	backupFailures  map[string]int
 	backupTriggered map[string]bool
+	idleBackupDay   map[string]string
 	aiMu            sync.Mutex
 	aiPending       map[string]aiPendingAction
 	startedAt       time.Time
@@ -105,6 +111,7 @@ func New(cfg *config.Config, source *config.ConfigSource) *Server {
 		configPath:      path,
 		configExists:    err == nil,
 		qrSessions:      make(map[string]*qrSession),
+		tmdbCache:       make(map[string]tmdbEpisodesCacheEntry),
 		covers:          make(map[string]coverEntry),
 		weekdays:        make(map[string]weekdayCacheEntry),
 		notifyMetaCache: make(map[string]notifyMetaEntry),
@@ -115,6 +122,8 @@ func New(cfg *config.Config, source *config.ConfigSource) *Server {
 		startedAt:       time.Now(),
 		versionText:     version.Version,
 	}
+	s.loadAuthSessions()
+	s.loadTMDBDiskCache()
 	return s
 }
 
@@ -145,6 +154,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/rename/preview", s.handleRenamePreview)
 	mux.HandleFunc("POST /api/feeds/preview/decisions", s.handleSavePreviewDecisions)
 	mux.HandleFunc("POST /api/feeds/preview/delete-history", s.handleDeletePreviewHistory)
+	mux.HandleFunc("GET /api/qb/fallback", s.handleQBFallbackList)
 	mux.HandleFunc("GET /api/tmdb/search", s.handleTMDBSearch)
 	mux.HandleFunc("GET /api/tmdb/detail", s.handleTMDBDetail)
 	mux.HandleFunc("GET /api/tmdb/episodes", s.handleTMDBEpisodes)
@@ -180,8 +190,11 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("/api/downloaders/qb/test", s.handleQBTest)
 	mux.HandleFunc("/api/ai/chat", s.handleAIChat)
+	mux.HandleFunc("/api/feeds/subgroup-resolve", s.handleSubgroupResolve)
+	mux.HandleFunc("/api/subgroup-aliases", s.handleSubgroupAliases)
 	mux.HandleFunc("/api/feeds/offset-suggest", s.handleOffsetSuggest)
 	mux.HandleFunc("/api/feeds/season-suggest", s.handleSeasonSuggest)
+	mux.HandleFunc("/api/match-templates", s.handleMatchTemplates)
 	mux.HandleFunc("/api/theme", s.handleTheme)
 	mux.HandleFunc("/api/theme/upload", s.handleThemeUpload)
 	mux.HandleFunc("/api/theme/image", s.handleThemeImage)
@@ -189,7 +202,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/ai/action", s.handleAIAction)
 
 	mux.Handle("/", staticHandler())
-	return s.withSecurity(s.withAuth(mux))
+	return s.withSecurity(s.withAuth(withAPICompression(mux)))
 }
 
 // Start listens and serves until ctx is cancelled.
@@ -229,6 +242,21 @@ func (s *Server) Start(ctx context.Context) error {
 	go s.startPostProcessLoop(ctx)
 	go s.startHourlyNotifyLoop(ctx)
 	go s.startWashScheduleLoop(ctx)
+	go s.startQBFallbackLoop(ctx)
+	go func() {
+		ag, err := s.ensureAgent()
+		if err != nil || ag.StoreInstance == nil {
+			return
+		}
+		if err := ag.StoreInstance.CleanupRetention(time.Now()); err != nil {
+			log.Printf("[warn] 清理旧数据失败: %v", err)
+		}
+		if cfg := s.configSnapshot(); cfg != nil {
+			if err := ag.StoreInstance.CleanupHistory(time.Now(), cfg.Offline.HistoryRetentionDays); err != nil {
+				log.Printf("[warn] 清理旧历史失败: %v", err)
+			}
+		}
+	}()
 
 	go func() {
 		<-ctx.Done()
@@ -518,6 +546,31 @@ func staticHandler() http.Handler {
 		panic(err)
 	}
 	fileServer := http.FileServer(http.FS(sub))
+	var gzipCache sync.Map
+	compressed := func(path string) ([]byte, error) {
+		if cached, ok := gzipCache.Load(path); ok {
+			return cached.([]byte), nil
+		}
+		raw, err := fs.ReadFile(sub, strings.TrimPrefix(path, "/"))
+		if err != nil {
+			return nil, err
+		}
+		var buf bytes.Buffer
+		zw, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := zw.Write(raw); err != nil {
+			_ = zw.Close()
+			return nil, err
+		}
+		if err := zw.Close(); err != nil {
+			return nil, err
+		}
+		data := append([]byte(nil), buf.Bytes()...)
+		gzipCache.Store(path, data)
+		return data, nil
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
@@ -530,9 +583,36 @@ func staticHandler() http.Handler {
 			_, _ = w.Write(data)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/backgrounds/") || r.URL.Path == "/logo.webp" || r.URL.Path == "/logo.png" {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
 		if strings.HasSuffix(r.URL.Path, "/") {
 			http.NotFound(w, r)
 			return
+		}
+		lower := strings.ToLower(r.URL.Path)
+		isTextAsset := strings.HasSuffix(lower, ".js") || strings.HasSuffix(lower, ".css") || strings.HasSuffix(lower, ".svg")
+		if isTextAsset {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			w.Header().Set("Vary", "Accept-Encoding")
+		}
+		if r.Method == http.MethodGet && isTextAsset && strings.Contains(strings.ToLower(r.Header.Get("Accept-Encoding")), "gzip") {
+			if data, err := compressed(r.URL.Path); err == nil {
+				contentType := "application/octet-stream"
+				switch {
+				case strings.HasSuffix(lower, ".js"):
+					contentType = "text/javascript; charset=utf-8"
+				case strings.HasSuffix(lower, ".css"):
+					contentType = "text/css; charset=utf-8"
+				case strings.HasSuffix(lower, ".svg"):
+					contentType = "image/svg+xml"
+				}
+				w.Header().Set("Content-Type", contentType)
+				w.Header().Set("Content-Encoding", "gzip")
+				w.Header().Set("Vary", "Accept-Encoding")
+				_, _ = w.Write(data)
+				return
+			}
 		}
 		fileServer.ServeHTTP(w, r)
 	})

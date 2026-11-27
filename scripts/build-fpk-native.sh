@@ -13,13 +13,14 @@ if ! command -v musl-gcc >/dev/null 2>&1; then
   exit 1
 fi
 
+BINARY_VERSION="${BINARY_VERSION:-0.03.8}"
 VERSION="$(sed -n 's/^version[[:space:]]*=[[:space:]]*//p' fpk-native/manifest | head -n 1 | tr -d '[:space:]')"
 [ -n "$VERSION" ] || { echo "cannot read version from fpk-native/manifest" >&2; exit 1; }
 
 export CGO_ENABLED=1 GOOS=linux GOARCH=amd64
 export CC=musl-gcc
 ${GO:-go} build -trimpath \
-  -ldflags "-s -w -extldflags -static -X github.com/huohen92/anifeed/version.Version=0.03.6" \
+  -ldflags "-s -w -extldflags -static -X github.com/huohen92/anifeed/version.Version=${BINARY_VERSION}" \
   -o fpk-native/app/bin/anifeed .
 
 mkdir -p dist

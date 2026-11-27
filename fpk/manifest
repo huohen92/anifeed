@@ -1,5 +1,5 @@
 appname=anifeed
-version=0.3.6
+version=0.3.8
 display_name=AniFeed
 desc=自托管动漫 RSS 自动离线到 115 网盘。安装后打开应用，先创建 Web UI 登录账号，再填写 115 Cookies。
 source=thirdparty
@@ -13,4 +13,4 @@ desktop_applaunchname=anifeed.main
 service_port=8115
 checkport=true
 ctl_stop=true
-changelog=0.03.6：服务器背景图、播出季度编辑、移动端预览卡片与UI修复。
+changelog=0.03.8：修复加密 Cookies 读取，恢复 115 登录。

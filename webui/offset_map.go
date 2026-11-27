@@ -121,7 +121,20 @@ func (s *Server) suggestOffset(cfg *config.Config, feed *config.RssConfig, rssUR
 	return &offsetSuggestion{Season: season, Offset: offset, Samples: list[0].count, Total: total, Confidence: conf}, nil
 }
 
+type tmdbEpisodesCacheEntry struct {
+	episodes []tmdbEpisode
+	at       time.Time
+}
+
 func (s *Server) tmdbEpisodes(cfg *config.Config, tmdbID string) ([]tmdbEpisode, error) {
+	cacheKey := tmdbCacheKey(cfg.TMDB.APIKey, tmdbID)
+	s.tmdbCacheMu.Lock()
+	if entry, ok := s.tmdbCache[cacheKey]; ok && time.Since(entry.at) < 6*time.Hour {
+		out := append([]tmdbEpisode(nil), entry.episodes...)
+		s.tmdbCacheMu.Unlock()
+		return out, nil
+	}
+	s.tmdbCacheMu.Unlock()
 	values := map[string]string{"api_key": cfg.TMDB.APIKey, "language": "zh-CN"}
 	var detail struct {
 		Seasons []struct {
@@ -153,6 +166,13 @@ func (s *Server) tmdbEpisodes(cfg *config.Config, tmdbID string) ([]tmdbEpisode,
 			}
 		}
 	}
+	s.tmdbCacheMu.Lock()
+	if s.tmdbCache == nil {
+		s.tmdbCache = make(map[string]tmdbEpisodesCacheEntry)
+	}
+	s.tmdbCache[cacheKey] = tmdbEpisodesCacheEntry{episodes: append([]tmdbEpisode(nil), out...), at: time.Now()}
+	s.saveTMDBDiskCacheLocked()
+	s.tmdbCacheMu.Unlock()
 	return out, nil
 }
 

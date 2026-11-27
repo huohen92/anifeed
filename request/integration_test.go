@@ -39,7 +39,7 @@ https_agent = false
 	})
 
 	config := ReadNodeSiteConfig()
-	
+
 	// Verify example.com configuration
 	exampleConfig, ok := config["example.com"]
 	if !ok {
@@ -51,7 +51,7 @@ https_agent = false
 	if exampleConfig.Headers["X-Custom"] != "test-value" {
 		t.Fatalf("expected X-Custom header to be 'test-value', got %q", exampleConfig.Headers["X-Custom"])
 	}
-	
+
 	// Verify test.org configuration
 	testConfig, ok := config["test.org"]
 	if !ok {
@@ -69,14 +69,14 @@ func TestReadNodeSiteConfigTOMLPriorityOverLegacy(t *testing.T) {
 	withIsolatedGlobals(t)
 
 	tempDir := t.TempDir()
-	
+
 	// Create legacy config
 	legacyFile := filepath.Join(tempDir, "node-site-config.json")
 	legacyContent := `{"legacy.com":{"httpsAgent":"yes","headers":{"X-Legacy":"old"}}}`
 	if err := os.WriteFile(legacyFile, []byte(legacyContent), 0o600); err != nil {
 		t.Fatalf("failed to create legacy config: %v", err)
 	}
-	
+
 	// Create TOML config
 	tomlFile := filepath.Join(tempDir, "config.toml")
 	tomlContent := `
@@ -102,7 +102,7 @@ X-TOML = "new"
 	})
 
 	config := ReadNodeSiteConfig()
-	
+
 	// TOML config should be loaded
 	tomlConfig, ok := config["toml.com"]
 	if !ok {
@@ -111,7 +111,7 @@ X-TOML = "new"
 	if tomlConfig.Headers["X-TOML"] != "new" {
 		t.Fatalf("expected X-TOML header to be 'new', got %q", tomlConfig.Headers["X-TOML"])
 	}
-	
+
 	// Legacy config should NOT be loaded when TOML exists
 	if _, ok := config["legacy.com"]; ok {
 		t.Fatalf("expected legacy.com config to NOT exist when TOML is present")

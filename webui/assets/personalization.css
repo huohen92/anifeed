@@ -85,7 +85,7 @@ html[data-af-bg="on"] body::after {
   background: color-mix(in srgb, var(--bg) 64%, transparent);
 }
 html[data-af-bg="on"][data-theme="dark"] body::after {
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  background: color-mix(in srgb, var(--bg) 30%, transparent);
 }
 
 html[data-af-glass="on"] .card,
@@ -143,7 +143,7 @@ html[data-af-bg="on"] body::before,
 html[data-af-bg="on"] body::after { content: none; }
 html[data-af-bg="on"] {
   background-image:
-    linear-gradient(color-mix(in srgb, var(--bg) 62%, transparent), color-mix(in srgb, var(--bg) 62%, transparent)),
+    linear-gradient(color-mix(in srgb, var(--bg) 20%, transparent), color-mix(in srgb, var(--bg) 20%, transparent)),
     var(--af-bg-image);
   background-size: cover;
   background-position: center;
@@ -152,10 +152,116 @@ html[data-af-bg="on"] {
 }
 html[data-af-bg="on"][data-theme="dark"] {
   background-image:
-    linear-gradient(color-mix(in srgb, var(--bg) 72%, transparent), color-mix(in srgb, var(--bg) 72%, transparent)),
+    linear-gradient(color-mix(in srgb, var(--bg) 30%, transparent), color-mix(in srgb, var(--bg) 30%, transparent)),
     var(--af-bg-image);
 }
 
 /* .main 原先是不透明背景，会盖住背景图 */
 html[data-af-glass="on"] .main,
 html[data-af-bg="on"] .main { background: transparent; }
+
+/* Keep the photo on one fixed viewport layer. Using background-attachment on
+ * the scrolling root causes visible horizontal slices on mobile WebViews. */
+html[data-af-bg="on"] {
+  background-color: var(--bg) !important;
+  background-image: none !important;
+}
+html[data-af-bg="on"] body::before {
+  content: '' !important;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--bg) 20%, transparent), color-mix(in srgb, var(--bg) 20%, transparent)),
+    var(--af-bg-image);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: scroll;
+}
+html[data-af-bg="on"] body::after { content: none !important; }
+html[data-af-bg="on"][data-theme="dark"] body::before {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--bg) 30%, transparent), color-mix(in srgb, var(--bg) 30%, transparent)),
+    var(--af-bg-image);
+}
+
+/* Posters and placeholder artwork stay opaque; disabled state dims metadata,
+ * not the cover image itself. */
+.anime-poster .poster-fallback img,
+.feed-manage-card.disabled .poster-fallback img { opacity: 1; }
+.anime-card.disabled { opacity: 1; }
+.anime-card.disabled .anime-info { opacity: .62; }
+.feed-manage-card.disabled .anime-poster > img,
+.feed-manage-card.disabled .anime-poster > .poster-image { opacity: 1; }
+.af-bg-builtin { align-self: center; color: var(--faint); font-size: 10px; padding: 0 4px; }
+
+html[data-af-bg="on"] body::before {
+  filter: blur(var(--af-bg-blur, 8px));
+  transform: scale(1.04);
+  transform-origin: center;
+}
+
+/* Keep the backdrop anchored to the stable large viewport. Using inset:0
+ * makes mobile browsers resize/reposition the fixed layer when the soft
+ * keyboard opens. */
+html[data-af-bg="on"] body::before {
+  top: 0;
+  right: auto;
+  bottom: auto;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100lvh;
+}
+
+/* The soft keyboard may resize the layout viewport on some Android WebViews.
+ * Freeze the backdrop to the last non-keyboard viewport size. */
+html[data-af-bg="on"] body::before {
+  width: var(--af-bg-width, 100vw);
+  height: var(--af-bg-height, 100lvh);
+}
+
+/* Skeletons mirror the real page grids so loading does not shift layout. */
+.skeleton-block {
+  background: linear-gradient(90deg, var(--surface-2), color-mix(in srgb, var(--border) 55%, var(--surface-2)), var(--surface-2));
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.4s linear infinite;
+  border-radius: 8px;
+}
+.skeleton-poster { width: 100%; aspect-ratio: 3 / 4; border-radius: 0; background: linear-gradient(90deg, var(--surface-2), color-mix(in srgb, var(--border) 55%, var(--surface-2)), var(--surface-2)); background-size: 220% 100%; animation: skeleton-shimmer 1.4s linear infinite; }
+.skeleton-card .skeleton-line { height: 11px; margin: 9px; }
+.skeleton-stat { min-height: 112px; }
+.skeleton-toolbar-search { width: 230px; height: 38px; }
+.skeleton-toolbar-pill { width: 130px; height: 38px; }
+.skeleton-toolbar-btn { width: 78px; height: 38px; }
+.skeleton-table-row { display: grid; grid-template-columns: 1.2fr 2fr 1fr; gap: 14px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.skeleton-table-row .skeleton-line { height: 14px; margin: 0; }
+.skeleton-log-block { height: 280px; border-radius: 8px; background: linear-gradient(90deg, var(--surface-2), color-mix(in srgb, var(--border) 55%, var(--surface-2)), var(--surface-2)); background-size: 220% 100%; animation: skeleton-shimmer 1.4s linear infinite; }
+@media (max-width: 640px) {
+  .skeleton-toolbar-search { width: 100%; }
+  .skeleton-toolbar-pill { width: 90px; }
+  .skeleton-table-row { grid-template-columns: 1.4fr 1fr; }
+  .skeleton-table-row .skeleton-line:last-child { display: none; }
+}
+.skeleton-log-box { min-height: 420px; }
+.skeleton-log-control { width: 84px; height: 24px; border-radius: 6px; background: #1e293b; }
+.skeleton-log-control.short { width: 44px; }
+.skeleton-log-control.wide { width: 180px; height: 30px; }
+.log-skeleton-body { flex: 1; padding: 14px 16px; display: flex; flex-direction: column; gap: 11px; overflow: hidden; }
+.skeleton-log-line { height: 12px; border-radius: 4px; background: rgba(148, 163, 184, .18); animation: skeleton-shimmer 1.4s linear infinite; background-size: 220% 100%; }
+.skeleton-log-line:nth-child(3n) { width: 72%; }
+.skeleton-log-line:nth-child(4n) { width: 88%; }
+@media (max-width: 700px) {
+  .skeleton-log-box { height: calc(100dvh - 280px); }
+  .skeleton-log-control.wide { width: 100%; }
+}
+
+/* Mobile bottom clearance: .main and .view were both reserving space for the
+ * fixed tab bar, leaving a large blank strip below the page. Reserve it once. */
+@media (max-width: 860px) {
+  .main { padding-bottom: 0; }
+  .view { padding-bottom: calc(82px + env(safe-area-inset-bottom, 0px)); }
+  .topbar { height: 56px; }
+}

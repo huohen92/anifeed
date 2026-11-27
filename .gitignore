@@ -36,3 +36,26 @@ db.sqlite
 
 # built native binary
 /fpk-native/app/bin/anifeed
+
+# Web UI auth sessions
+.auth-sessions.json
+.auth-sessions-*.tmp
+
+# Node test deps
+/tests/e2e/node_modules/
+.cookies.key
+
+# TMDB cache
+.tmdb-cache.json
+.tmdb-cache-*.tmp
+
+# Local design/audit artifacts and reference checkouts
+/docs/audit/
+/ref/
+/docs/webui-export/
+AniFeed-WebUI-*.zip
+docs/AniFeed-WebUI-*.zip
+
+/docs/screenshots/
+
+/posters/

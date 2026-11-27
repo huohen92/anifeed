@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -83,7 +82,7 @@ func (s *Server) afterRun(kind string, ag *p115.Agent, results []p115.FeedRunRes
 		go s.sendAddedNotifications(cfg, results)
 	}
 	if kind == "auto" || kind == "all" || kind == "feed" {
-		if cfg.Offline.AutoDisableCompleted && ag != nil {
+		if ag != nil {
 			go func() {
 				time.Sleep(3 * time.Second)
 				s.autoDisableCompletedFeeds(ag)
@@ -93,6 +92,7 @@ func (s *Server) afterRun(kind string, ag *p115.Agent, results []p115.FeedRunRes
 	if kind == "auto" || kind == "all" {
 		s.recordAutoBackupFailures(cfg, results)
 		go s.checkIdleFeeds(cfg)
+		go s.checkIdleAutoBackup(cfg)
 	}
 }
 
@@ -104,11 +104,16 @@ func (s *Server) checkIdleFeeds(cfg *config.Config) {
 	if days <= 0 {
 		days = 7
 	}
-	st, err := store.NewWithPath(s.databasePath())
-	if err != nil {
-		return
+	var st *store.Store
+	if ag, err := s.ensureAgent(); err == nil && ag.StoreInstance != nil {
+		st = ag.StoreInstance
+	} else {
+		st, err = store.NewWithPath(s.databasePath())
+		if err != nil {
+			return
+		}
+		defer st.Close()
 	}
-	defer st.Close()
 	now := time.Now()
 	dayKey := now.Format("2006-01-02")
 	var reminders []string
@@ -165,11 +170,11 @@ func buildNotifyPayload(kind string, results []p115.FeedRunResult, runErr error)
 	}
 	switch kind {
 	case "all", "auto":
-		payload.Title = "AniFeed 全部订阅运行完成"
+		payload.Title = "AniFeed 运行完成"
 	default:
 		payload.Title = "AniFeed 订阅运行完成"
 		if len(results) == 1 {
-			payload.Title = "AniFeed 订阅运行完成：" + results[0].Name
+			payload.Title = "AniFeed · " + results[0].Name
 		}
 	}
 	if runErr != nil {
@@ -217,26 +222,20 @@ func (s *Server) sendTestNotification() error {
 	if cfg == nil || cfg.Notify.Webhook == "" {
 		return fmt.Errorf("尚未配置 Webhook 地址")
 	}
-	now := time.Now()
-	template := cfg.Notify.Template
-	if strings.TrimSpace(template) == "" {
-		template = config.DefaultNotifyTemplate()
+	payload := notifyPayload{
+		Event:     "test",
+		Title:     "AniFeed 测试通知",
+		Status:    "success",
+		FeedCount: 2,
+		Matched:   3,
+		Added:     2,
+		Timestamp: time.Now().Format(time.RFC3339),
+		Results: []p115.FeedRunResult{
+			{Name: "青之箱", Matched: 2, Added: 1, AddedTitles: []string{"[LoliHouse] 青之箱 - 06"}},
+			{Name: "佐佐木与文鸟小哔", Matched: 1, Added: 1, AddedTitles: []string{"[ANi] 佐佐木与文鸟小哔 - 07"}},
+		},
 	}
-	content := renderNotifyTemplate(template, map[string]string{
-		"action": "测试通知", "title": "AniFeed 测试通知", "score": "8.0",
-		"themoviedbName": "AniFeed 测试番剧", "bgmUrl": "https://bgm.tv/subject/1",
-		"season": "1", "episode": "1", "subgroup": "测试字幕组",
-		"currentEpisodeNumber": "1", "totalEpisodeNumber": "12",
-		"year": strconv.Itoa(now.Year()), "month": strconv.Itoa(int(now.Month())), "date": strconv.Itoa(now.Day()),
-		"text": "测试事件", "bgmEpisodeTitle": "第1集",
-	})
-	if !strings.Contains(content, "状态：") {
-		content += "\n状态：成功\n时间：" + now.Format("2006-01-02 15:04")
-	}
-	if err := postRawNotification(cfg.Notify, content); err != nil {
-		return err
-	}
-	return nil
+	return postRawNotification(cfg.Notify, notificationText(cfg.Notify, payload))
 }
 
 func postNotification(cfg config.NotifyConfig, payload notifyPayload) error {
@@ -278,7 +277,7 @@ func notificationText(cfg config.NotifyConfig, payload notifyPayload) string {
 	}
 	lines := []string{payload.Title}
 	if len(payload.IdleFeeds) > 0 {
-		lines = append(lines, "", fmt.Sprintf("以下订阅超过 %d 天没有更新：", payload.IdleDays))
+		lines = append(lines, fmt.Sprintf("超过 %d 天未更新：", payload.IdleDays))
 		for _, feed := range payload.IdleFeeds {
 			lines = append(lines, "- "+feed)
 		}
@@ -286,63 +285,63 @@ func notificationText(cfg config.NotifyConfig, payload notifyPayload) string {
 	if sections["summary"] {
 		lines = append(lines,
 			"状态："+status,
-			fmt.Sprintf("检查订阅：%d 个", payload.FeedCount),
-			fmt.Sprintf("发现新内容：%d 条", payload.Matched),
-			fmt.Sprintf("提交到 115：%d 个", payload.Added),
+			fmt.Sprintf("订阅 %d · 发现 %d · 提交 %d", payload.FeedCount, payload.Matched, payload.Added),
 		)
 	}
 	if sections["time"] && payload.Timestamp != "" {
 		lines = append(lines, "时间："+formatNotificationTime(payload.Timestamp))
 	}
 	if sections["details"] && len(payload.Results) > 0 {
-		lines = append(lines, "", "订阅更新：")
+		var details []string
 		for _, result := range payload.Results {
 			name := result.Name
 			if name == "" {
 				name = result.URL
 			}
-			line := fmt.Sprintf("- %s：发现 %d 条，提交 %d 个", name, result.Matched, result.Added)
-			if result.Cached > 0 {
-				line += fmt.Sprintf("，以前下载过 %d 条", result.Cached)
+			parts := make([]string, 0, 2)
+			if result.Added > 0 {
+				parts = append(parts, fmt.Sprintf("提交 %d", result.Added))
+			} else if result.Matched > 0 {
+				parts = append(parts, fmt.Sprintf("发现 %d", result.Matched))
 			}
-			if result.Skipped > 0 {
-				line += fmt.Sprintf("，重复版本跳过 %d 条", result.Skipped)
+			if len(parts) == 0 {
+				continue
 			}
-			if result.Rejected > 0 {
-				line += fmt.Sprintf("，115 未接受 %d 条", result.Rejected)
-			}
-			lines = append(lines, line)
+			details = append(details, "- "+name+"："+strings.Join(parts, "，"))
 			for _, title := range result.AddedTitles {
 				title = strings.TrimSpace(title)
-				if len([]rune(title)) > 80 {
-					title = string([]rune(title)[:80]) + "…"
+				if title == "" {
+					continue
 				}
-				lines = append(lines, "  · "+title)
+				if len([]rune(title)) > 64 {
+					title = string([]rune(title)[:64]) + "…"
+				}
+				details = append(details, "  "+title)
 			}
+		}
+		if len(details) > 0 {
+			lines = append(lines, "", "更新：")
+			lines = append(lines, details...)
 		}
 	}
 	if sections["errors"] {
-		errorResults := make([]p115.FeedRunResult, 0)
+		var errors []string
 		for _, result := range payload.Results {
-			if result.Error != "" {
-				errorResults = append(errorResults, result)
+			if result.Error == "" {
+				continue
 			}
+			name := result.Name
+			if name == "" {
+				name = result.URL
+			}
+			errors = append(errors, "- "+name+"："+friendlyNotifyError(result.Error, result.URL))
 		}
-		if len(errorResults) > 0 {
+		if len(errors) == 0 && payload.Error != "" {
+			errors = append(errors, "- "+friendlyNotifyError(payload.Error, ""))
+		}
+		if len(errors) > 0 {
 			lines = append(lines, "", "错误：")
-			for _, result := range errorResults {
-				name := result.Name
-				if name == "" {
-					name = result.URL
-				}
-				lines = append(lines, "- "+name)
-				if result.URL != "" {
-					lines = append(lines, "  RSS: "+result.URL)
-				}
-				lines = append(lines, "  原因："+friendlyNotifyError(result.Error, result.URL))
-			}
-		} else if payload.Error != "" {
-			lines = append(lines, "", "错误：", "- 原因："+friendlyNotifyError(payload.Error, ""))
+			lines = append(lines, errors...)
 		}
 	}
 	content := strings.Join(lines, "\n")
@@ -376,7 +375,7 @@ func friendlyNotifyError(message, rawURL string) string {
 	if strings.Contains(lower, "certificate") || strings.Contains(lower, "tls") || strings.Contains(lower, "x509") {
 		return "HTTPS 证书校验失败"
 	}
-	if strings.Contains(lower, "invalid filter") {
+	if strings.Contains(lower, "匹配规则格式错误") || strings.Contains(lower, "排除规则格式错误") {
 		return message
 	}
 	// Strip the repetitive Go/RSS wrapper and keep the meaningful tail.
@@ -476,10 +475,21 @@ func (s *Server) autoDisableCompletedFeeds(ag *p115.Agent) {
 		return
 	}
 	latest := make(map[string]float64)
+	mainEpisodes := make(map[string]map[int]bool)
 	for _, item := range history {
 		episode, epErr := p115.ExtractEpisode(item.Title)
-		if epErr == nil && episode > latest[item.ConfigName] {
+		if epErr != nil {
+			continue
+		}
+		if episode > latest[item.ConfigName] {
 			latest[item.ConfigName] = episode
+		}
+		if strings.TrimSpace(item.ConfigUrl) != "" {
+			key := strings.TrimSpace(item.ConfigUrl)
+			if mainEpisodes[key] == nil {
+				mainEpisodes[key] = make(map[int]bool)
+			}
+			mainEpisodes[key][int(episode)] = true
 		}
 	}
 	targets := make(map[string]bool)
@@ -492,7 +502,19 @@ func (s *Server) autoDisableCompletedFeeds(ag *p115.Agent) {
 			if offset == 0 {
 				offset = cfg.Rename.Offset
 			}
-			if latest[feed.Name]+float64(offset) >= float64(feed.TotalEpisodes) {
+			if feed.AutoDisable {
+				done := 0
+				for episode := range mainEpisodes[strings.TrimSpace(feed.Url)] {
+					if episode+offset > 0 {
+						done++
+					}
+				}
+				if done >= feed.TotalEpisodes {
+					targets[feed.Name] = true
+				}
+				continue
+			}
+			if cfg.Offline.AutoDisableCompleted && latest[feed.Name]+float64(offset) >= float64(feed.TotalEpisodes) {
 				targets[feed.Name] = true
 			}
 		}

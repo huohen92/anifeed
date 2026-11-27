@@ -138,7 +138,7 @@ const PAGE_META = {
 };
 
 const state = {
-  token: localStorage.getItem('anifeed_token') || '',
+  token: sessionStorage.getItem('anifeed_token') || '',
   status: null,
   config: null,
   meta: null,
@@ -164,11 +164,14 @@ const state = {
     } catch { return {}; }
   })(),
   rules: null,
+  matchTemplates: null,
+  subgroupAliases: null,
   taskFilter: 'all',
   historyName: '',
   historyLimit: 50,
   settingsTab: 'form',
   settingsSites: null,
+  globalExcludes: null,
   logAuto: true,
   logMode: localStorage.getItem('anifeed_log_mode') || 'list',
   logLevel: 'all',
@@ -186,6 +189,38 @@ const state = {
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
+
+/* ===== 字幕组别名 ===== */
+async function loadSubgroupAliases(force) {
+  if (!force && Array.isArray(state.subgroupAliases)) return state.subgroupAliases;
+  const data = await api('/api/subgroup-aliases');
+  state.subgroupAliases = Array.isArray(data.aliases) ? data.aliases : [];
+  return state.subgroupAliases;
+}
+
+/* ===== 字幕组匹配模板 ===== */
+async function loadMatchTemplates(force) {
+  if (!force && Array.isArray(state.matchTemplates)) return state.matchTemplates;
+  const data = await api('/api/match-templates');
+  state.matchTemplates = Array.isArray(data.templates) ? data.templates : [];
+  return state.matchTemplates;
+}
+function templateMatchesSubgroup(template, subgroup) {
+  const target = String(subgroup || '').trim().toLowerCase();
+  if (!target) return false;
+  const candidates = [template.subgroup, ...(template.aliases || [])].map(value => String(value || '').trim().toLowerCase()).filter(Boolean);
+  return candidates.includes(target);
+}
+function scopeTemplateRules(raw, subgroup) {
+  const group = String(subgroup || '').trim();
+  if (!group) return String(raw || '').trim();
+  return String(raw || '').split(/\r?\n/).map(line => {
+    line = line.trim();
+    if (!line) return '';
+    if (line.startsWith('{{')) return line;
+    return '{{' + group + '}}:' + line;
+  }).filter(Boolean).join('\n');
+}
 
 /* ===== 季度标注（仅前端显示，不参与后端重命名） ===== */
 const QUARTER_KEY = 'anifeed.quarters.v3';
@@ -384,11 +419,17 @@ async function api(path, options = {}) {
   if (state.token) headers['X-Access-Token'] = state.token;
   opts.headers = headers;
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+  opts.signal = controller.signal;
   let res;
   try {
     res = await fetch(path, opts);
   } catch (err) {
+    if (err && err.name === 'AbortError') throw new Error('请求超时，请稍后重试');
     throw new Error('无法连接 AniFeed 服务，请确认服务仍在运行');
+  } finally {
+    clearTimeout(timeout);
   }
   const type = res.headers.get('content-type') || '';
   let data;
@@ -433,14 +474,18 @@ function toast(message, type = 'success', timeout = 3600) {
   }, timeout);
 }
 
+const modalStack = [];
+let modalTitleSeq = 0;
+
 function openModal({ title, subtitle = '', body = '', footer = '', size = '', onMount }) {
   const root = $('#modal-root');
   const backdrop = document.createElement('div');
   backdrop.className = 'modal-backdrop';
+  const titleId = 'modal-title-' + (++modalTitleSeq);
   backdrop.innerHTML = `
-    <div class="modal ${size}" role="dialog" aria-modal="true">
+    <div class="modal ${size}" role="dialog" aria-modal="true" aria-labelledby="${titleId}" tabindex="-1">
       <div class="modal-head">
-        <div><h3>${esc(title)}</h3>${subtitle ? `<p>${esc(subtitle)}</p>` : ''}</div>
+        <div><h3 id="${titleId}">${esc(title)}</h3>${subtitle ? `<p>${esc(subtitle)}</p>` : ''}</div>
         <button class="icon-btn close" data-action="modal-close" aria-label="关闭">${icon('close')}</button>
       </div>
       <div class="modal-body">${body}</div>
@@ -449,15 +494,31 @@ function openModal({ title, subtitle = '', body = '', footer = '', size = '', on
   root.appendChild(backdrop);
   requestAnimationFrame(() => backdrop.classList.add('show'));
 
+  const previousFocus = document.activeElement;
   const handle = { el: backdrop, close: null, closed: false };
+  modalStack.push(handle);
+  const focusable = () => Array.from(backdrop.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter(el => el.offsetParent !== null);
   const close = () => {
+    if (handle.closed) return;
     handle.closed = true;
+    const index = modalStack.indexOf(handle);
+    if (index >= 0) modalStack.splice(index, 1);
     backdrop.classList.remove('show');
     document.removeEventListener('keydown', onKey);
     setTimeout(() => backdrop.remove(), 180);
+    if (previousFocus && previousFocus.isConnected && modalStack.length === 0) previousFocus.focus({ preventScroll: true });
   };
   handle.close = close;
-  const onKey = event => { if (event.key === 'Escape') close(); };
+  const onKey = event => {
+    if (modalStack[modalStack.length - 1] !== handle) return;
+    if (event.key === 'Escape') { event.preventDefault(); close(); return; }
+    if (event.key !== 'Tab') return;
+    const items = focusable();
+    if (!items.length) { event.preventDefault(); backdrop.querySelector('.modal')?.focus(); return; }
+    const first = items[0], last = items[items.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
   document.addEventListener('keydown', onKey);
   backdrop.addEventListener('click', event => {
     if (event.target === backdrop) close();
@@ -465,6 +526,7 @@ function openModal({ title, subtitle = '', body = '', footer = '', size = '', on
   });
 
   if (onMount) onMount(backdrop, close, handle);
+  requestAnimationFrame(() => { const items = focusable(); (items[0] || backdrop.querySelector('.modal'))?.focus({ preventScroll: true }); });
   return handle;
 }
 
@@ -517,11 +579,18 @@ function initTheme() {
 }
 
 function initMobileKeyboardGuard() {
+  const lockBackgroundViewport = () => {
+    const root = document.documentElement;
+    root.style.setProperty('--af-bg-width', window.innerWidth + 'px');
+    root.style.setProperty('--af-bg-height', window.innerHeight + 'px');
+  };
   const update = () => {
     const vv = window.visualViewport;
     const keyboard = vv ? Math.max(0, window.innerHeight - vv.height - (vv.offsetTop || 0)) : 0;
     const focused = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
-    document.body.classList.toggle('keyboard-open', !!focused && keyboard > 120);
+    const keyboardOpen = !!focused && keyboard > 120;
+    document.body.classList.toggle('keyboard-open', keyboardOpen);
+    if (!keyboardOpen) lockBackgroundViewport();
   };
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', update);
@@ -529,6 +598,8 @@ function initMobileKeyboardGuard() {
   }
   document.addEventListener('focusin', () => setTimeout(update, 50));
   document.addEventListener('focusout', () => setTimeout(update, 120));
+  window.addEventListener('resize', () => { if (!document.body.classList.contains('keyboard-open')) lockBackgroundViewport(); });
+  lockBackgroundViewport();
   update();
 }
 
@@ -603,6 +674,8 @@ function renderRoute() {
   clearTimers();
   const route = currentRoute();
   state.route = route;
+  document.body.dataset.route = route;
+  window.scrollTo(0, 0);
   state.routeEpoch = (state.routeEpoch || 0) + 1;
   const meta = PAGE_META[route];
   document.title = 'AniFeed';
@@ -610,6 +683,7 @@ function renderRoute() {
   $('#page-subtitle').textContent = meta.subtitle;
   $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.route === route));
   $$('[data-mobile-route]').forEach(el => el.classList.toggle('active', el.dataset.mobileRoute === route));
+  document.querySelectorAll('#ai-fab, #ai-fab-mobile').forEach(el => el.classList.toggle('active', route === 'ai'));
   document.body.classList.toggle('hide-topbar-actions', route === 'logs');
 
   switch (route) {
@@ -624,118 +698,38 @@ function renderRoute() {
   }
 }
 
-function loadAIPage() {
-  const view = $('#view');
-  const welcome = '你好，我可以查询订阅、115 任务、下载历史和运行状态。修改订阅需要二次确认。';
-  if (!state.aiMessages) state.aiMessages = [{ role: 'assistant', content: welcome }];
-  const suggestions = ['现在有哪些订阅？', '最近失败的 115 任务', '最近下载了什么？', '备用 RSS 有哪些？'];
-
-  const bubble = m => {
-    const isUser = m.role === 'user';
-    return `<div class="chat-row ${isUser ? 'is-user' : 'is-ai'}">
-      ${isUser ? '' : '<span class="chat-avatar">AI</span>'}
-      <div class="chat-bubble">${esc(m.content).replace(/\n/g, '<br>')}</div>
-    </div>`;
-  };
-
-  const paintDisabled = () => {
-    view.innerHTML = `<div class="chat-shell chat-disabled">
-      <div class="chat-empty">
-        <span class="chat-avatar lg">AI</span>
-        <strong>AI 助手未启用</strong>
-        <p>在「设置 → 连接与账号 → AI 设置」里填写 API 地址、模型与 Key 后开启。</p>
-        <a class="btn btn-primary" href="#/settings">去启用</a>
-      </div>
-    </div>`;
-  };
-
-  const paint = () => {
-    const empty = state.aiMessages.length <= 1;
-    view.innerHTML = `<div class="chat-shell">
-      <div class="chat-top">
-        <span class="chat-mode" id="ai-mode">${esc(state.aiMode || '')}</span>
-        <button class="chat-ghost" id="ai-clear" type="button">清空</button>
-        <a class="chat-ghost" href="#/settings">设置</a>
-      </div>
-      <div class="chat-body" id="ai-messages">
-        ${empty ? `<div class="chat-empty">
-          <span class="chat-avatar lg">AI</span>
-          <strong>有什么可以帮你？</strong>
-          <p>${esc(welcome)}</p>
-          <div class="chat-chips">${suggestions.map(q => `<button type="button" class="chat-chip" data-ai-suggest="${esc(q)}">${esc(q)}</button>`).join('')}</div>
-        </div>` : state.aiMessages.map(bubble).join('') + (state.aiBusy ? `<div class="chat-row is-ai"><span class="chat-avatar">AI</span><div class="chat-bubble thinking"><i></i><i></i><i></i></div></div>` : '')}
-      </div>
-      <div class="chat-compose">
-        <textarea class="chat-input" id="ai-input" rows="1" placeholder="问点什么…（Enter 发送，Shift+Enter 换行）" ${state.aiBusy ? 'disabled' : ''}></textarea>
-        <button class="chat-send" id="ai-send" type="button" ${state.aiBusy ? 'disabled' : ''} aria-label="发送">${icon('arrow')}</button>
-      </div>
-      <div class="chat-foot">AI 仅使用配置摘要和查询结果；不会读取 Cookie、API Key 或密码。</div>
-    </div>`;
-
-    const input = $('#ai-input');
-    const grow = () => { input.style.height = 'auto'; input.style.height = Math.min(140, input.scrollHeight) + 'px'; };
-    const scrollDown = () => { const box = $('#ai-messages'); if (box) box.scrollTop = box.scrollHeight; };
-
-    const send = async () => {
-      const text = input.value.trim();
-      if (!text || state.aiBusy) return;
-      state.aiMessages.push({ role: 'user', content: text });
-      input.value = '';
-      state.aiBusy = true;
-      paint();
-      const msgs = state.aiMessages.filter(m => m.role === 'user' || m.role === 'assistant').slice(-20);
-      try {
-        const res = await api('/api/ai/chat', { method: 'POST', body: { messages: msgs } });
-        state.aiMessages.push({ role: 'assistant', content: res.reply || '（AI 没有返回内容）' });
-        state.aiBusy = false;
-        paint();
-        if (res.pending) openAIApproval(res.pending);
-      } catch (e) {
-        state.aiMessages.push({ role: 'assistant', content: '请求失败：' + e.message });
-        state.aiBusy = false;
-        paint();
-      }
-    };
-
-    $('#ai-send').addEventListener('click', send);
-    input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
-    input.addEventListener('input', grow);
-    $$('[data-ai-suggest]').forEach(btn => btn.addEventListener('click', () => { input.value = btn.dataset.aiSuggest; input.focus(); grow(); }));
-    $('#ai-clear').addEventListener('click', () => { state.aiMessages = [{ role: 'assistant', content: welcome }]; state.aiBusy = false; paint(); });
-    grow();
-    scrollDown();
-  };
-
-  paint();
-  api('/api/config').then(r => {
-    const ai = (r.config || {}).ai || {};
-    state.aiEnabled = !!ai.enabled;
-    if (!ai.enabled) { paintDisabled(); return; }
-    state.aiMode = ai.permission === 'full' ? '完整权限' : '只读';
-    const el = $('#ai-mode');
-    if (el) el.textContent = state.aiMode;
-  }).catch(() => {});
+function loadAssetScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-lazy-module="' + src + '"]');
+    if (existing) { existing.addEventListener('load', resolve, { once: true }); existing.addEventListener('error', reject, { once: true }); return; }
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.lazyModule = src;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('加载模块失败: ' + src));
+    document.body.appendChild(script);
+  });
 }
-function openAIApproval(pending) {
-  const modal = openModal({
-    title: '确认 AI 操作', subtitle: '该操作会修改配置，请确认',
-    body: `<p>${esc(pending.summary)}</p><div class="notice">${icon('alert')}<span>确认后立即执行，无法自动撤销。</span></div>`,
-    footer: `<button class="btn" data-action="modal-close">取消</button><span class="spacer"></span><button class="btn btn-danger" id="ai-confirm">确认执行</button>`,
-  });
-  modal.el.querySelector('#ai-confirm').addEventListener('click', async () => {
-    modal.close();
-    try { const r = await api('/api/ai/action', { method: 'POST', body: { token: pending.token } }); toast(r.message || '操作已执行', 'success'); await loadSettingsPage(); }
-    catch (e) { toast(e.message, 'error', 5000); }
-  });
+
+async function ensureAIModule() {
+  if (window.AniFeedAI) return;
+  const app = document.querySelector('script[src*="app.min.js"]');
+  const query = app ? (new URL(app.src).search || '') : '';
+  await loadAssetScript('/app-ai.min.js' + query);
+}
+
+async function loadAIPage() {
+  await ensureAIModule();
+  return window.AniFeedAI.loadPage();
 }
 
 function syncAINav() {
-  api('/api/config').then(r => {
-    const on = !!(((r.config || {}).ai || {}).enabled);
-    state.aiEnabled = on;
-    $$('[data-route="ai"], [data-mobile-route="ai"]').forEach(el => { el.style.display = on ? '' : 'none'; });
-    if (!on && (location.hash || '').indexOf('#/ai') === 0) location.hash = '#/dashboard';
-  }).catch(() => {});
+  const apply = ai => {
+    state.aiEnabled = !!((ai || {}).enabled);
+    document.querySelectorAll('#ai-fab, #ai-fab-mobile').forEach(el => el.classList.toggle('is-disabled', !state.aiEnabled));
+  };
+  if (state.config) { apply((state.config.ai || {})); return; }
+  api('/api/config').then(r => apply((r.config || {}).ai)).catch(err => console.debug('[AniFeed]', err));
 }
 
 function renderFatal(message) {
@@ -754,31 +748,74 @@ function renderFatal(message) {
 /* ================================================================
  * Dashboard
  * ================================================================ */
+function skeletonAnimeCard(kind = 'dashboard') {
+  const badges = kind === 'feeds'
+    ? '<div class="skeleton-line short" style="height:12px;margin:10px 9px"></div>'
+    : '<div class="skeleton-line short" style="height:11px;margin:9px 9px 0"></div><div class="skeleton-line" style="height:11px;margin:5px 9px"></div><div class="skeleton-line short" style="height:11px;margin:0 9px 9px"></div>';
+  return '<article class="anime-card skeleton-card"><div class="skeleton-poster"></div>' + badges + '</article>';
+}
+
+function skeletonStats(count = 4) {
+  return '<div class="stats">' + Array.from({ length: count }).map(() => '<div class="stat skeleton-stat"><div class="skeleton-line short"></div><div class="skeleton-line"></div><div class="skeleton-line short"></div></div>').join('') + '</div>';
+}
+
+function skeletonToolbar() {
+  return '<div class="toolbar skeleton-toolbar"><div class="skeleton-block skeleton-toolbar-search"></div><div class="skeleton-block skeleton-toolbar-pill"></div><div class="skeleton-block skeleton-toolbar-pill"></div><span class="spacer"></span><div class="skeleton-block skeleton-toolbar-btn"></div><div class="skeleton-block skeleton-toolbar-btn"></div></div>';
+}
+
+function pageSkeleton(kind = 'list') {
+  const grid = '<div class="feed-grid">' + Array.from({ length: 6 }).map(() => skeletonAnimeCard('feeds')).join('') + '</div>';
+  if (kind === 'dashboard') {
+    return skeletonStats(4)
+      + '<section class="dashboard-anime"><div class="card-head"><div><div class="skeleton-line short"></div><div class="skeleton-line short"></div></div></div><div class="anime-grid">' + Array.from({ length: 6 }).map(() => skeletonAnimeCard('dashboard')).join('') + '</div></section>'
+      + '<section class="card"><div class="section-body"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-line"></div></div></section>';
+  }
+  if (kind === 'feeds') {
+    return skeletonToolbar() + '<div class="skeleton-line short" style="margin:2px 2px 10px;height:16px"></div>' + grid;
+  }
+  if (kind === 'tasks') {
+    const rows = Array.from({ length: 5 }).map(() => '<div class="skeleton-table-row"><div class="skeleton-line short"></div><div class="skeleton-line"></div><div class="skeleton-line short"></div></div>').join('');
+    return skeletonToolbar() + '<div class="card"><div class="section-body">' + rows + '</div></div><div class="card"><div class="section-body"><div class="skeleton-line short"></div><div class="skeleton-line"></div></div></div>';
+  }
+  if (kind === 'history') {
+    const rows = Array.from({ length: 6 }).map(() => '<div class="skeleton-table-row"><div class="skeleton-line short"></div><div class="skeleton-line"></div><div class="skeleton-line short"></div></div>').join('');
+    return skeletonToolbar() + '<div class="card"><div class="section-body">' + rows + '</div></div>';
+  }
+  if (kind === 'logs') {
+    const bars = Array.from({ length: 12 }).map(() => '<div class="skeleton-log-line"></div>').join('');
+    return '<div class="log-box skeleton-log-box"><div class="log-head"><span class="dots"><i></i><i></i><i></i></span><span>AniFeed · server</span><span class="spacer"></span><div class="skeleton-log-control"></div><div class="skeleton-log-control short"></div></div><div class="log-filter-bar"><div class="skeleton-log-control"></div><div class="skeleton-log-control wide"></div></div><div class="log-skeleton-body">' + bars + '</div></div>';
+  }
+  return skeletonToolbar() + grid;
+}
+
+function renderBootSkeleton() {
+  const route = currentRoute();
+  if (route === 'dashboard') { renderDashboardSkeleton(); return; }
+  if (route === 'settings') { renderSettingsSkeleton(); return; }
+  $('#view').innerHTML = pageSkeleton(route);
+}
+
+function renderDashboardSkeleton() {
+  $('#view').innerHTML = pageSkeleton('dashboard');
+}
+
 async function loadDashboard() {
   const epoch = state.routeEpoch;
-  const view = $('#view');
   const hasCache = !!state.status;
   if (hasCache) {
     renderDashboard();
   } else {
-    view.innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取服务状态…</span></div>`;
+    renderDashboardSkeleton();
   }
 
   let statusError = null;
-  const jobs = [
+  await Promise.allSettled([
     loadStatus().catch(err => { statusError = err; }),
-    ensureConfig().catch(() => {}),
-    api('/api/history?limit=200').then(data => { state.history = data.items || []; }).catch(() => {}),
-    api('/api/logs?limit=12').then(data => { state.logs = data.lines || []; }).catch(() => {}),
-  ];
-  jobs.push(api('/api/tasks?limit=200').then(data => { state.tasks = data.tasks || []; state.tasksLoaded = true; }).catch(() => { state.tasks = []; }));
-  await Promise.allSettled(jobs);
-  // The first config request can race with login/session initialization.
-  // Retry once before painting, otherwise the overview renders as empty.
+    ensureConfig().catch(err => console.debug('[AniFeed]', err)),
+  ]);
   if (!state.config) {
-    try { await ensureConfig(); } catch { /* keep status-only view */ }
+    try { await ensureConfig(); } catch { /* status-only */ }
   }
-  if (state.history.length) state.historyLoaded = true;
   if (state.routeEpoch !== epoch) return;
   if (!state.status) {
     renderFatal(statusError ? statusError.message : '无法读取服务状态');
@@ -786,6 +823,18 @@ async function loadDashboard() {
   }
   renderDashboard();
   scheduleLoginPoll();
+
+  // Tasks/history/logs are not needed for the first paint. Load them after
+  // the shell is visible so a slow 115 request cannot block the dashboard.
+  const dataJobs = [
+    api('/api/history?limit=200').then(data => { state.history = data.items || []; if (state.history.length) state.historyLoaded = true; }).catch(err => console.debug('[AniFeed]', err)),
+    api('/api/logs?limit=12').then(data => { state.logs = data.lines || []; }).catch(err => console.debug('[AniFeed]', err)),
+    api('/api/tasks?limit=200').then(data => { state.tasks = data.tasks || []; state.tasksLoaded = true; }).catch(() => { state.tasks = []; }),
+  ];
+  Promise.allSettled(dataJobs).then(() => {
+    if (state.routeEpoch !== epoch || state.route !== 'dashboard') return;
+    renderDashboard();
+  });
 }
 
 function scheduleLoginPoll() {
@@ -963,7 +1012,7 @@ function dashboardAnimeCard(feed, index) {
   const disabled = !enabled || completed;
   return `<article class="anime-card ${disabled ? 'disabled' : ''}" data-dashboard-feed="${index}">
     <div class="anime-poster" data-feed-cover data-index="${index}">
-      <span class="poster-fallback"><img src="/logo.png" alt="AniFeed"></span>
+      <span class="poster-fallback"><img src="/logo.webp" alt="AniFeed"></span>
       <img class="poster-image" alt="${esc(cached ? cached.title || '' : '')}" ${cached && cached.cover ? `src="${esc(cached.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
       <span class="anime-badge">${completed ? '已完成' : disabled ? '未启用' : '追番中'}</span>
     </div>
@@ -1074,12 +1123,12 @@ async function loadFeedsPage() {
   if (state.config) {
     renderFeedsPage();
   } else {
-    $('#view').innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取订阅配置…</span></div>`;
+    $('#view').innerHTML = pageSkeleton('feeds');
   }
   try {
     await ensureConfig();
-    await loadStatus().catch(() => {});
-    await api('/api/history?limit=500').then(data => { state.history = data.items || []; state.historyLoaded = true; }).catch(() => {});
+    await loadStatus().catch(err => console.debug('[AniFeed]', err));
+    await api('/api/history?limit=500').then(data => { state.history = data.items || []; state.historyLoaded = true; }).catch(err => console.debug('[AniFeed]', err));
   } catch (err) {
     if (state.routeEpoch === epoch) renderFatal(err.message);
     return;
@@ -1129,9 +1178,10 @@ function renderFeedsPage() {
     renderFeedList();
   });
   $('#browse-feeds').addEventListener('click', () => openBrowseModal('anibt', pick => {
-    openFeedModal(-1, {
+    openNewFeedWithRules({
       source: pick.source,
       name: pick.title,
+      subgroup_name: pick.subgroup || '',
       url: pick.url,
     });
   }));
@@ -1237,7 +1287,9 @@ function renderFeedList() {
       state.feedQuery || state.feedSource ? '换个关键词或来源筛选试试。' : '从 Mikan、AniBT、AnimeGarden 或其他 RSS 添加订阅，开始把新番离线到 115。',
       `<button class="btn btn-primary" id="empty-add-feed">${icon('plus')}添加订阅</button>`)}</div>`;
     const btn = $('#empty-add-feed');
-    if (btn) btn.addEventListener('click', () => openAddFlow());
+    if (btn) btn.addEventListener('click', () => openBrowseModal('anibt', pick => openNewFeedWithRules({
+      source: pick.source, name: pick.title, subgroup_name: pick.subgroup || '', url: pick.url,
+    })));
     return;
   }
 
@@ -1403,7 +1455,7 @@ function feedCard(feed, index, completed = false) {
   const subgroup = subgroupLabel(feed.subgroup_name || urlSubgroupName(feed.url), feed.name);
   return `<article class="anime-card feed-manage-card ${disabled ? 'disabled' : ''}" title="${esc(feed.name)}">
     <div class="anime-poster" data-feed-cover data-feed-poster data-index="${index}" data-source="${source.key}" title="点击编辑订阅">
-      <span class="poster-fallback"><img src="/logo.png" alt="AniFeed"></span>
+      <span class="poster-fallback"><img src="/logo.webp" alt="AniFeed"></span>
       <img class="poster-image" alt="${esc(cachedCover ? cachedCover.title || '' : '')}" ${cachedCover && cachedCover.cover ? `src="${esc(cachedCover.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
       <span class="anime-badge">${completed ? '已完成' : disabled ? '未启用' : '追番中'}</span>
       <div class="feed-cover-overlay">
@@ -1723,7 +1775,6 @@ function openBrowseModal(source, onPick, initialQuery = '') {
               <div class="browse-anime-meta">${esc(item.meta || '')}${item.rss_count ? ` · ${item.rss_count} 个资源` : ''}</div>
             </div>
             ${item.score > 0 ? `<span class="browse-score">${item.score.toFixed(1)}</span>` : ''}
-            <span class="browse-chevron">${icon('arrow')}</span>
           </div>`;
         }).join('');
 
@@ -1764,9 +1815,11 @@ function openBrowseModal(source, onPick, initialQuery = '') {
           </div>`).join('');
           return `<div class="browse-group">
             <div class="browse-group-head">
-              <div class="browse-group-name"><strong>${esc(group.name)}</strong><span>${esc(group.meta || '')}${group.latest ? ` · 最近 ${fmtDate(group.latest)}` : ''}</span></div>
+              <div class="browse-group-name ${releases ? 'browse-group-toggle' : ''}" ${releases ? 'data-toggle-group role="button" tabindex="0" aria-expanded="false"' : ''}>
+                <strong>${esc(group.name)}</strong>
+                <span>${esc(group.meta || '')}${group.latest ? ` · 最近 ${fmtDate(group.latest)}` : ''}</span>
+              </div>
               <button class="btn btn-sm btn-primary" data-add-group="${index}">${icon('plus')}添加订阅</button>
-              ${releases ? `<button class="btn btn-sm btn-ghost" data-toggle-releases>资源 ${group.items.length}</button>` : ''}
             </div>
             ${releases ? `<div class="browse-releases hidden">${releases}</div>` : ''}
           </div>`;
@@ -1777,10 +1830,23 @@ function openBrowseModal(source, onPick, initialQuery = '') {
           close();
           onPick({ source: view.source, id: item.id, title: item.title, subgroup: group.name, url: group.rss });
         }));
-        $$('[data-toggle-releases]', container).forEach(btn => btn.addEventListener('click', () => {
-          const list = btn.closest('.browse-group').querySelector('.browse-releases');
-          list.classList.toggle('hidden');
-        }));
+        container.querySelectorAll('[data-toggle-group]').forEach(toggle => {
+          const group = toggle.closest('.browse-group');
+          const list = group && group.querySelector('.browse-releases');
+          if (!list) return;
+          const setOpen = open => {
+            list.classList.toggle('hidden', !open);
+            toggle.classList.toggle('open', open);
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          };
+          toggle.addEventListener('click', () => setOpen(list.classList.contains('hidden')));
+          toggle.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              setOpen(list.classList.contains('hidden'));
+            }
+          });
+        });
         $$('[data-copy-magnet]', container).forEach(btn => btn.addEventListener('click', () => copyText(btn.dataset.copyMagnet)));
       };
 
@@ -1940,6 +2006,58 @@ function openFolderPicker(onSelect, title = '选择 115 目录') {
   });
 }
 
+function openQBHelp() {
+  openModal({
+    title: 'qBittorrent 设置说明',
+    subtitle: '115 失败后的本地兜底下载器',
+    size: 'browse',
+    body: `<div class="notice">${icon('info')}<span>运行方式：115 离线任务连续失败达到阈值后，AniFeed 通过 qB WebUI API 提交同一个磁力/种子，并记录提交状态。qB 完成下载后，AniFeed 只读取任务状态，不会直接移动 qB 文件。</span></div>
+      <div class="table-wrap" style="margin-top:14px"><table class="table"><thead><tr><th>设置</th><th>如何填写</th></tr></thead><tbody>
+        <tr><td>WebUI 地址</td><td>填 qB 容器内可访问的地址，如 <code>http://127.0.0.1:8080</code>；不要填宿主机路径或带 <code>/api</code>。</td></tr>
+        <tr><td>API Key</td><td>qB 5.2+ 在 WebUI 设置中生成，通常以 <code>qbt_</code> 开头。填写后优先使用 Bearer API Key，不再需要用户名密码。</td></tr>
+        <tr><td>用户名 / 密码</td><td>仅在未填写 API Key 时使用；旧版 qB 可用。</td></tr>
+        <tr><td>保存路径</td><td>填 qB 容器内路径，如 <code>/downloads</code>。留空使用 qB 默认保存路径。不是宿主机路径。</td></tr>
+        <tr><td>分类 / 标签</td><td>可选，用于在 qB 中筛选 AniFeed 任务；标签多个用逗号分隔。</td></tr>
+        <tr><td>内容布局</td><td>Original 保留种子目录；Subfolder 创建任务子文件夹；NoSubfolder 不创建子文件夹；默认交给 qB。</td></tr>
+        <tr><td>限速</td><td>单位 KB/s；填 0 表示不覆盖 qB 全局限速。</td></tr>
+        <tr><td>分享率 / 做种时长 / 非活跃时长</td><td>填 0 使用 qB 全局设置；做种时长单位分钟。</td></tr>
+        <tr><td>使用 qB 临时下载路径</td><td>开启后使用 qB 的临时下载目录；最终目录仍由保存路径决定。需先在 qB 内配置临时目录。</td></tr>
+        <tr><td>115 失败阈值</td><td>同一个 115 失败任务连续检查达到该次数后提交 qB；默认 3 次。</td></tr>
+      </tbody></table></div>
+      <div class="notice" style="margin-top:14px">${icon('alert')}<span>如果以后要做 qB 下载完成后的文件重命名/移动，需要让 qB 和 AniFeed 访问同一个目录，或配置路径映射。当前版本仅提交任务、查询完成状态和展示兜底记录，不会移动 qB 文件。</span></div>`,
+    footer: '<button class="btn btn-primary" data-action="modal-close">知道了</button>',
+  });
+}
+
+function openNotifyPreview() {
+  const raw = ($('#set-notify-template') || {}).value || DEFAULT_NOTIFY_TEMPLATE;
+  const fields = {
+    action: '添加至云下载', title: '青之箱', score: '8.2', themoviedbName: '青之箱',
+    bgmUrl: 'https://bgm.tv/subject/548156', season: '1', episode: '6',
+    subgroup: 'LoliHouse', currentEpisodeNumber: '6', totalEpisodeNumber: '37',
+    year: '2026', month: '11', date: '27', text: '[LoliHouse] 青之箱 - 06',
+    bgmEpisodeTitle: '第6集', failureCount: '0',
+  };
+  const rendered = raw.replace(/\$\{(\w+)\}/g, (m, key) => fields[key] === undefined ? m : fields[key])
+    .split('\n').filter(line => line.trim() && !/^[^：:]+[：:]\s*$/.test(line.trim())).join('\n');
+  const summary = `AniFeed 运行完成
+状态：成功
+订阅 4 · 发现 3 · 提交 2
+时间：2026-11-27 07:40
+
+更新：
+- 青之箱：提交 1
+  [LoliHouse] 青之箱 - 06`;
+  openModal({
+    title: '通知预览',
+    subtitle: '条目模板与运行汇总的实际排版',
+    size: 'browse',
+    body: `<div class="section-subtitle">条目通知（模板）</div><pre class="log-pre" style="max-height:240px;border-radius:10px">${esc(rendered)}</pre>
+      <div class="section-subtitle" style="margin-top:14px">运行汇总（非模板）</div><pre class="log-pre" style="max-height:240px;border-radius:10px">${esc(summary)}</pre>`,
+    footer: '<button class="btn btn-primary" data-action="modal-close">关闭</button>',
+  });
+}
+
 function openRenameVarsHelp() {
   const vars = [
     ['${title}', '订阅名称（会自动去掉结尾的“ · 字幕组”）', '佐佐木与文鸟小哔 第二季'],
@@ -1963,80 +2081,23 @@ function openRenameVarsHelp() {
   });
 }
 
-const MATCH_TAG_GROUPS = [
-  { label: '分辨率', tags: [
-    ['1080p', '(?i)(?:1080p|1920x1080)'],
-    ['720p', '(?i)(?:720p|1280x720)'],
-    ['4K', '(?i)(?:2160p|4K|3840x2160)'],
-  ]},
-  { label: '语言', tags: [
-    ['简', '(?i)(?:简|CHS|GB|SC)'],
-    ['繁', '(?i)(?:繁|CHT|BIG5|TC)'],
-    ['日', '(?i)(?:日|JPN|JP)'],
-    ['简繁', '(?i)(?:简繁|繁简|CHS&CHT|SC&TC)'],
-    ['简日', '(?i)(?:简日|CHS&JPN|CHS_JP)'],
-    ['繁日', '(?i)(?:繁日|CHT&JPN|CHT_JP)'],
-  ]},
-  { label: '字幕', tags: [
-    ['内封', '(?i)(?:内封|内挂|软字幕)'],
-    ['内嵌', '(?i)(?:内嵌|硬字幕)'],
-    ['外挂', '(?i)(?:外挂|外置)'],
-  ]},
-  { label: '编码', tags: [
-    ['HEVC', '(?i)(?:HEVC|H\\.265|x265)'],
-    ['AVC', '(?i)(?:AVC|H\\.264|x264)'],
-    ['10bit', '(?i)(?:10bit|10-bit)'],
-    ['8bit', '(?i)(?:8bit|8-bit)'],
-  ]},
-  { label: '容器', tags: [
-    ['MKV', '(?i)(?:MKV|\\.mkv)'],
-    ['MP4', '(?i)(?:MP4|\\.mp4)'],
-  ]},
-];
 
-function openAddFlow(prefill = null) {
-  const selected = new Set();
-  openModal({
-    title: '匹配偏好',
-    subtitle: '选择发布标题中必须包含的标签；不选表示不限制',
-    size: 'match',
-    body: `<div id="match-tags"></div><div class="rule-preview"><span>将生成的 filter</span><code id="match-filter-preview">（无，匹配全部）</code></div>`,
-    footer: `<button class="btn btn-sm" id="match-all">全部（不限制）</button><span class="spacer"></span><button class="btn" id="match-skip">跳过</button><button class="btn btn-primary" id="match-confirm">${icon('check')}应用并继续</button>`,
-    onMount(el, close) {
-      const tagsBox = el.querySelector('#match-tags');
-      const preview = el.querySelector('#match-filter-preview');
-      const buildFilter = () => {
-        const patterns = [];
-        for (const group of MATCH_TAG_GROUPS) {
-          for (const [label, pattern] of group.tags) {
-            if (selected.has(label)) patterns.push(pattern);
-          }
-        }
-        return patterns.length ? `/^${patterns.map(pattern => `(?=.*(?:${pattern}))`).join('')}.*/` : '';
-      };
-      const draw = () => {
-        tagsBox.innerHTML = MATCH_TAG_GROUPS.map(group => `<div class="match-group"><span>${esc(group.label)}</span><div class="match-tags">${group.tags.map(([label]) => `<button type="button" class="match-chip ${selected.has(label) ? 'active' : ''}" data-match-tag="${esc(label)}">${esc(label)}</button>`).join('')}</div></div>`).join('');
-        const filter = buildFilter();
-        preview.textContent = filter || '（无，匹配全部）';
-        $$('[data-match-tag]', tagsBox).forEach(btn => btn.addEventListener('click', () => {
-          const tag = btn.dataset.matchTag;
-          if (selected.has(tag)) selected.delete(tag); else selected.add(tag);
-          draw();
-        }));
-      };
-      el.querySelector('#match-all').addEventListener('click', () => { selected.clear(); draw(); });
-      el.querySelector('#match-confirm').addEventListener('click', () => {
-        const filter = buildFilter();
-        close();
-        openFeedModal(-1, { ...(prefill || {}), filter, exclude: '' });
-      });
-      el.querySelector('#match-skip').addEventListener('click', () => {
-        close();
-        openFeedModal(-1, { ...(prefill || {}), filter: '', exclude: '' });
-      });
-      draw();
-    },
+function openNewFeedWithRules(prefill = {}) {
+  const context = {
+    ...prefill,
+    subgroup_name: prefill.subgroup_name || prefill.subgroup || '',
+    filter: prefill.filter || '',
+    exclude: prefill.exclude || '',
+  };
+  const loading = openModal({
+    title: '规则与匹配',
+    subtitle: '先配置规则，再填写订阅基本信息',
+    size: 'rules',
+    body: '<div class="stats"><div class="stat"><div class="skeleton-line short"></div><div class="skeleton-line"></div></div><div class="stat"><div class="skeleton-line short"></div><div class="skeleton-line"></div></div></div><div class="card"><div class="section-body"><div class="skeleton-line"></div><div class="skeleton-line short"></div><div class="skeleton-line"></div></div></div>',
   });
+  openRulesModal((filter, exclude) => {
+    openFeedModal(-1, { ...prefill, filter, exclude });
+  }, () => context).finally(() => loading.close());
 }
 
 function formatMissingEpisodes(missing) {
@@ -2065,60 +2126,32 @@ function renderRuleResults(container, data) {
       return !item.filtered;
     });
     const visible = filtered.slice(0, 16);
-    const summary = data.one_per_episode
-      ? `RSS ${items.length} 条 · 规则匹配 ${data.matched} 条 · 将下载 ${Number(data.selected_count) || 0} 条`
-      : `RSS ${items.length} 条 · 规则匹配 ${data.matched} 条 · 自动建议 ${Number(data.suggested_count) || 0} 条 · 实际提交 ${Number(data.selected_count) || 0} 条`;
+    const summary = `RSS ${items.length} 条 · 规则匹配 ${data.matched} 条 · 实际提交 ${Number(data.selected_count) || 0} 条`;
     const rows = visible.map(item => {
-      const status = item.status === 'ready'
-        ? '<span class="badge badge-success">可重命名</span>'
-        : '<span class="badge badge-danger">无法解析</span>';
-      const rule = item.filtered
-        ? `<span class="badge" title="${esc(item.filter_reason || '规则过滤')}">过滤</span>`
-        : '<span class="badge badge-success">通过</span>';
-      const suggestion = item.filtered
-        ? '—'
-        : item.suggested
-          ? '<span class="badge badge-primary">建议</span>'
-          : `<span class="badge" title="${esc(item.skip_reason || '自动建议忽略')}">忽略</span>`;
-      const pick = item.filtered
-        ? '—'
-        : item.selected
-          ? '<span class="badge badge-primary">将下载</span>'
-          : `<span class="badge" title="${esc(item.skip_reason || '实际跳过')}">跳过</span>`;
       const renamed = item.renamed
         ? `<code class="preview-renamed">${esc(item.renamed)}</code>`
         : `<span class="form-error">${esc(item.error || '无法生成名称')}</span>`;
       return `<tr class="${item.filtered ? 'rule-filtered' : ''} ${item.suggested ? '' : 'preview-skipped'}">
+        <td class="numeric" data-label="集数">${item.episode ? esc(String(item.episode)) : '—'}</td>
         <td class="name-cell" data-label="标题"><div class="title">${esc(item.title)}</div></td>
         <td data-label="重命名后">${renamed}</td>
-        <td class="numeric" data-label="集数">${item.episode ? esc(String(item.episode)) : '—'}</td>
-        <td class="nowrap" data-label="规则">${rule}</td>
-        <td class="nowrap" data-label="自动建议">${suggestion}</td>
-        <td class="nowrap" data-label="下载">${pick}</td>
-        <td class="nowrap" data-label="状态">${status}</td>
       </tr>`;
     }).join('');
     container.innerHTML = `
       <div class="rule-results-head">
         <span>${summary}</span>
         <span class="spacer"></span>
-        <button type="button" class="btn btn-sm ${mode === 'auto' ? 'btn-primary' : ''}" id="rule-auto-view">自动</button>
         <button type="button" class="btn btn-sm ${mode === 'all' ? 'btn-primary' : ''}" id="rule-show-all">显示 RSS 全部内容</button>
       </div>
       ${(data.missing || []).length ? `<div class="notice" style="margin:6px 0 8px">${icon('alert')}<span>缺少第 <b>${esc(formatMissingEpisodes(data.missing))}</b> 集</span></div>` : ''}
-      <div class="hint" style="margin:6px 0 8px">自动：只在规则匹配的条目中按集数分组，再按分辨率、语言、内封/内嵌、编码等评分选一个；被规则过滤的条目不参与自动。未限定语言时默认优先简体，选择繁体时自动在繁体候选里选。</div>
       ${!data.one_per_episode ? `<div class="notice" style="margin:6px 0 8px">${icon('info')}<span>当前仅识别并记录，不实际跳过；实际会提交全部规则匹配项。开启「每集只下载一个版本」后才按自动建议提交。</span></div>` : ''}
       ${visible.length ? `<div class="table-wrap rule-result-table-wrap">
-        <table class="table rename-preview-table">
-          <thead><tr><th>RSS / BT 标题</th><th>重命名后</th><th>集数</th><th>规则</th><th>自动建议</th><th>下载</th><th>状态</th></tr></thead>
+        <table class="table rename-preview-table rule-result-compact">
+          <thead><tr><th>集数</th><th>RSS / BT 标题</th><th>重命名后</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
       </div>` : `<div class="empty" style="padding:22px"><span class="hint">当前视图没有条目。</span></div>`}
       ${filtered.length > visible.length ? `<div class="hint" style="margin-top:8px">还有 ${filtered.length - visible.length} 条未显示</div>` : ''}`;
-    container.querySelector('#rule-auto-view')?.addEventListener('click', () => {
-      container._ruleMode = container._ruleMode === 'auto' ? 'matched' : 'auto';
-      draw();
-    });
     container.querySelector('#rule-show-all')?.addEventListener('click', () => {
       container._ruleMode = container._ruleMode === 'all' ? 'matched' : 'all';
       draw();
@@ -2150,12 +2183,13 @@ async function openItemPreview(feed) {
         </div>
       </details>`;
       const previewSources = [
-        { role: 'main', subgroup: '', url: feed.url, source: feed.source, filter: feed.filter || '', exclude: feed.exclude || '', season: feed.rename_season || 0, offset: feed.rename_offset || 0 },
+        { role: 'main', subgroup: feed.subgroup_name || '', url: feed.url, source: feed.source, filter: feed.filter || '', exclude: feed.exclude || '', season: feed.rename_season || 0, offset: feed.rename_offset || 0 },
         ...backupSources.map(group => ({ role: 'backup', subgroup: group.name || '', url: group.url, source: feed.source, filter: group.filter || '', exclude: group.exclude || '', season: group.season || feed.rename_season || 0, offset: group.offset || 0 })),
       ];
       Promise.all(previewSources.map((source, order) => {
         const params = new URLSearchParams({
           name: feed.name || '', url: source.url || '', source: source.source || '',
+          subgroup: source.subgroup || '',
           filter: source.filter, exclude: source.exclude,
           rename_season: String(source.season || 0), rename_offset: String(source.offset || 0),
           tmdb_id: feed.tmdb_id || '', tmdb_type: feed.tmdb_type || 'tv',
@@ -2345,28 +2379,55 @@ async function openRulesModal(onApply, getPreviewContext = null) {
       }
     }
     for (const group of data.groups || []) {
-      if (groups.has(group.id)) excludes.push(group.pattern);
+      if (groups.has(group.id)) excludes.push(group.group ? `{{${group.group}}}:${group.pattern}` : group.pattern);
     }
-    const filter = includes.length ? `/^${includes.map(pattern => `(?=.*(?:${pattern}))`).join('')}.*/` : '';
-    const exclude = excludes.length ? `/(?:${excludes.map(pattern => `(?:${pattern})`).join('|')})/` : '';
-    return { filter, exclude };
+    return { filter: includes.join('\n'), exclude: excludes.join('\n') };
   };
 
   const initialContext = getPreviewContext ? getPreviewContext() : {};
+  let matchTemplates = [];
+  try { matchTemplates = await loadMatchTemplates(); } catch (err) { matchTemplates = []; }
   openModal({
-    title: '规则与重命名',
-    subtitle: '选择规则后实时显示匹配条目、重命名结果和同集优选；新规则会叠加到当前 filter/exclude',
+    title: '规则与匹配',
+    subtitle: (String(initialContext.name || '').trim() ? String(initialContext.name).trim() + ' · ' : '') + '选择字幕组模板，或使用常用规则临时组合；实时显示匹配结果',
     size: 'rules',
     body: `
-      <div class="notice">${icon('info')}<span>规则库来源：<a href="${esc(data.source)}" target="_blank" rel="noopener">${esc(data.source)}</a>。选择偏好后会生成“必须包含”的 filter，并把同类的其他选项加入 exclude。</span></div>
-      <div class="form-grid rules-manual">
-        <label class="field"><span>白名单 filter</span><textarea class="textarea mono" id="rules-base-filter" rows="2" placeholder="标题包含即离线，或 /正则/；支持多行和 {{字幕组}}:正则">${esc(initialContext.filter || '')}</textarea><span class="hint">多行规则为 AND；规则库生成的内容会追加到这里。</span></label>
-        <label class="field"><span>黑名单 exclude</span><textarea class="textarea mono" id="rules-base-exclude" rows="2" placeholder="标题包含即跳过，或 /正则/；支持多行">${esc(initialContext.exclude || '')}</textarea><span class="hint">多行规则为 OR；规则库生成的内容会追加到这里。</span></label>
+      <div class="rules-template-panel"><div class="rules-template-head"><strong>字幕组匹配模板</strong><span id="rules-template-subgroup"></span><span class="hint">选择「全部」表示不限制</span></div><div id="rules-templates" class="rules-templates"></div></div>
+      <div class="rules-active-summary" id="rules-active-summary"></div>
+      <div class="rules-quick-panel">
+        <details class="rules-quick-fold">
+          <summary><strong>常用规则</strong><span class="hint">点击展开选择</span></summary>
+          <div class="rules-quick-head">
+            <span class="hint">点击追加到</span>
+            <div class="rules-quick-target" id="rules-quick-target">
+              <button type="button" class="active" data-quick-target="filter">匹配</button>
+              <button type="button" data-quick-target="exclude">排除</button>
+            </div>
+          </div>
+          <div class="rules-quick-chips" id="rules-quick-chips"></div>
+        </details>
+        <div class="rule-bubble-columns">
+          <div class="rule-bubble-column">
+            <div class="rule-bubble-head"><span>匹配</span><small>全部命中</small></div>
+            <div class="rule-bubble-list" id="rules-filter-bubbles"></div>
+            <div class="rule-bubble-add"><input class="input mono" id="rules-filter-input" placeholder="输入正则，回车添加"><button class="btn btn-sm" type="button" data-bubble-add="filter">添加</button></div>
+          </div>
+          <div class="rule-bubble-column">
+            <div class="rule-bubble-head"><span>排除</span><small>任一命中即过滤</small></div>
+            <div class="rule-bubble-list" id="rules-exclude-bubbles"></div>
+            <div class="rule-bubble-add"><input class="input mono" id="rules-exclude-input" placeholder="输入正则，回车添加"><button class="btn btn-sm" type="button" data-bubble-add="exclude">添加</button></div>
+          </div>
+        </div>
+        <textarea class="hidden" id="rules-base-filter">${esc(initialContext.filter || '')}</textarea>
+        <textarea class="hidden" id="rules-base-exclude">${esc(initialContext.exclude || '')}</textarea>
       </div>
-      <div id="rules-body"></div>
-      <div class="rule-preview"><span>生成规则</span><code id="rules-filter-preview">—</code><code id="rules-exclude-preview">—</code></div>
-      <div class="rule-results" id="rules-results"><span class="hint">选择规则后自动显示 RSS 匹配结果</span></div>`,
-    footer: `<button class="btn" id="rules-best">${icon('filter')}自动应用最佳规则</button><button class="btn" id="rules-clear">清空</button><span class="spacer"></span><button class="btn" data-action="modal-close">取消</button><button class="btn btn-primary" id="rules-apply">${icon('check')}应用到订阅</button>`,
+      <div class="hidden" aria-hidden="true">
+        <div id="rules-body"></div>
+        <div class="rule-preview"><span>生成规则</span><code id="rules-filter-preview">—</code><code id="rules-exclude-preview">—</code></div>
+        <button class="btn btn-sm" type="button" id="rules-clear">清空快捷预设</button>
+      </div>
+      <div class="rule-results" id="rules-results"><span class="hint">选择模板后自动显示 RSS 匹配结果</span></div>`,
+    footer: `<span class="spacer"></span><button class="btn" data-action="modal-close">取消</button><button class="btn btn-primary" id="rules-apply">${icon('check')}应用到订阅</button>`,
     onMount(el, close) {
       const body = el.querySelector('#rules-body');
       const filterPreview = el.querySelector('#rules-filter-preview');
@@ -2375,6 +2436,184 @@ async function openRulesModal(onApply, getPreviewContext = null) {
       let resultTimer = null;
       let resultToken = 0;
       let autoApplied = false;
+      const templateSubgroup = String(initialContext.subgroup_name || '').trim();
+      const baseFilterEl = el.querySelector('#rules-base-filter');
+      const baseExcludeEl = el.querySelector('#rules-base-exclude');
+      const templatesBox = el.querySelector('#rules-templates');
+      const activeSummary = el.querySelector('#rules-active-summary');
+      const usableTemplates = templateSubgroup
+        ? matchTemplates.filter(template => templateMatchesSubgroup(template, templateSubgroup))
+        : [];
+      let activeTemplate = '';
+      const templateFilter = template => scopeTemplateRules(template.filter, template.subgroup || templateSubgroup);
+      const templateExclude = template => scopeTemplateRules(template.exclude, template.subgroup || templateSubgroup);
+      const bubbleEls = {
+        filter: el.querySelector('#rules-filter-bubbles'),
+        exclude: el.querySelector('#rules-exclude-bubbles'),
+      };
+      const bubbleInputs = {
+        filter: el.querySelector('#rules-filter-input'),
+        exclude: el.querySelector('#rules-exclude-input'),
+      };
+      const bubbleRules = target => String((target === 'filter' ? baseFilterEl : baseExcludeEl).value || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+      const setBubbleRules = (target, lines) => {
+        (target === 'filter' ? baseFilterEl : baseExcludeEl).value = Array.from(new Set(lines.filter(Boolean))).join('\n');
+      };
+      const refreshBubblePreview = () => {
+        autoApplied = true;
+        activeTemplate = '';
+        for (const key of Object.keys(selected)) selected[key] = '';
+        groups.clear();
+        renderTemplates();
+        draw();
+        scheduleResults();
+      };
+      function renderBubbles() {
+        for (const target of ['filter', 'exclude']) {
+          const box = bubbleEls[target];
+          if (!box) continue;
+          const lines = bubbleRules(target);
+          if (!lines.length) {
+            box.innerHTML = `<span class="rule-bubble-empty">${target === 'filter' ? '全部' : '无'}</span>`;
+            continue;
+          }
+          box.innerHTML = lines.map((line, index) => `<span class="rule-bubble" title="${esc(line)}"><code>${esc(line)}</code><button type="button" data-bubble-remove="${target}" data-bubble-index="${index}" aria-label="删除">×</button></span>`).join('');
+          box.querySelectorAll('[data-bubble-remove]').forEach(button => button.addEventListener('click', () => {
+            const list = bubbleRules(button.dataset.bubbleRemove);
+            list.splice(Number(button.dataset.bubbleIndex), 1);
+            setBubbleRules(button.dataset.bubbleRemove, list);
+            renderBubbles();
+            refreshBubblePreview();
+          }));
+        }
+      }
+      const addBubble = (target, raw) => {
+        const value = String(raw || '').trim();
+        if (!value) return;
+        const lines = bubbleRules(target);
+        lines.push(value);
+        setBubbleRules(target, lines);
+        renderBubbles();
+        refreshBubblePreview();
+      };
+      for (const target of ['filter', 'exclude']) {
+        const input = bubbleInputs[target];
+        const button = el.querySelector(`[data-bubble-add="${target}"]`);
+        const submit = () => { addBubble(target, input.value); input.value = ''; };
+        button?.addEventListener('click', submit);
+        input?.addEventListener('keydown', event => {
+          if (event.key === 'Enter') { event.preventDefault(); submit(); }
+        });
+      }
+
+      const renderTemplates = () => {
+        if (!templatesBox) return;
+        const subgroupLabel = el.querySelector('#rules-template-subgroup');
+        const feedLabel = String(initialContext.name || '').trim();
+        if (subgroupLabel) subgroupLabel.textContent = feedLabel ? '当前订阅：' + feedLabel : '当前订阅未设置';
+        const option = (id, label, template) => {
+          const tags = template ? ((template.tags || []).length ? template.tags : String(template.name || '').split(/[\s/]+/).filter(Boolean)) : [];
+          return `<button type="button" class="match-option ${activeTemplate === id ? 'active' : ''}" data-rule-template="${esc(id)}">
+            <span class="match-radio"></span>
+            <span class="match-option-main">${template ? `<span class="match-option-name">${esc(template.name || '未命名模板')}</span><span class="match-tags">${tags.map(tag => `<span>${esc(tag)}</span>`).join('')}</span>` : `<span class="match-option-name">${esc(label)}</span>`}</span>
+          </button>`;
+        };
+        const cards = usableTemplates.map(template => option(template.id, template.name, template));
+        cards.push(option('__all', '全部', null));
+        cards.push(option('__auto', '自动应用最佳规则', null));
+        if (!usableTemplates.length) cards.push('<p class="hint" style="margin:6px 0 0">当前字幕组没有匹配模板，可直接在下方手动填写规则。</p>');
+        templatesBox.innerHTML = cards.join('');
+        if (activeSummary) {
+          const template = usableTemplates.find(item => item.id === activeTemplate);
+          const label = template ? template.name : (activeTemplate === '__all' ? '全部' : (activeTemplate === '__auto' ? '自动应用最佳规则' : '自定义规则'));
+          const filterLines = String(baseFilterEl?.value || '').split(/\r?\n/).filter(line => line.trim()).length;
+          const excludeLines = String(baseExcludeEl?.value || '').split(/\r?\n/).filter(line => line.trim()).length;
+          activeSummary.innerHTML = `<span>当前</span><strong>${esc(label)}</strong><span>匹配 ${filterLines} 条 · 排除 ${excludeLines} 条</span>`;
+        }
+        templatesBox.querySelectorAll('[data-rule-template]').forEach(button => button.addEventListener('click', () => {
+          const id = button.dataset.ruleTemplate;
+          if (id === '__auto') {
+            activeTemplate = '__auto';
+            applyBestRules(false, true);
+            return;
+          }
+          activeTemplate = id;
+          autoApplied = true;
+          for (const key of Object.keys(selected)) selected[key] = '';
+          groups.clear();
+          if (id === '__all') {
+            baseFilterEl.value = '';
+            baseExcludeEl.value = '';
+          } else {
+            const template = usableTemplates.find(item => item.id === id);
+            if (template) {
+              baseFilterEl.value = templateFilter(template);
+              baseExcludeEl.value = templateExclude(template);
+            }
+          }
+          renderTemplates();
+          renderBubbles();
+          draw();
+          scheduleResults();
+        }));
+      };
+      const currentFilter = (baseFilterEl?.value || '').trim();
+      const currentExclude = (baseExcludeEl?.value || '').trim();
+      const matchedTemplate = usableTemplates.find(template => currentFilter === templateFilter(template).trim() && currentExclude === templateExclude(template).trim());
+      activeTemplate = matchedTemplate ? matchedTemplate.id : (currentFilter || currentExclude ? '__custom' : '__all');
+      renderTemplates();
+      renderBubbles();
+      [baseFilterEl, baseExcludeEl].forEach(input => input?.addEventListener('input', () => {
+        activeTemplate = '';
+        autoApplied = true;
+        for (const key of Object.keys(selected)) selected[key] = '';
+        groups.clear();
+        renderTemplates();
+      }));
+
+
+
+
+      const QUICK_RULE_CHIPS = [
+        ['1080P', '1080[Pp]'], ['720P', '720[Pp]'], ['4K', '2160[Pp]|4K'],
+        ['简', '简'], ['繁', '繁'], ['简日', '简日'], ['繁日', '繁日'], ['简繁日', '简繁日'],
+        ['CHS', '(?i)CHS'], ['CHT', '(?i)CHT'], ['GB', '(?i)GB'], ['BIG5', '(?i)BIG5'], ['简中', '简中'], ['繁中', '繁中'],
+        ['内封', '内封'], ['内嵌', '内嵌'], ['外挂', '外挂'],
+        ['MKV', '(?i)MKV'], ['MP4', '(?i)MP4'],
+        ['x.5', '\\d{1,4}\\.5'], ['合集', '合集'], ['特别篇', '特别篇'],
+      ];
+      let quickTarget = 'filter';
+      const quickBox = el.querySelector('#rules-quick-chips');
+      const targetBox = el.querySelector('#rules-quick-target');
+      const renderQuick = () => {
+        if (quickBox) {
+          quickBox.innerHTML = QUICK_RULE_CHIPS.map(([label, value]) => `<button type="button" class="rule-chip" data-quick-rule="${esc(value)}">${esc(label)}</button>`).join('');
+          quickBox.querySelectorAll('[data-quick-rule]').forEach(button => button.addEventListener('click', () => {
+            const target = quickTarget === 'exclude' ? baseExcludeEl : baseFilterEl;
+            const value = button.dataset.quickRule;
+            const lines = target.value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+            if (!lines.includes(value)) lines.push(value);
+            target.value = lines.join('\n');
+            autoApplied = true;
+            activeTemplate = '';
+            for (const key of Object.keys(selected)) selected[key] = '';
+            groups.clear();
+            renderTemplates();
+            renderBubbles();
+            draw();
+            scheduleResults();
+          }));
+        }
+        if (targetBox) {
+          targetBox.querySelectorAll('[data-quick-target]').forEach(button => button.classList.toggle('active', button.dataset.quickTarget === quickTarget));
+        }
+      };
+      targetBox?.querySelectorAll('[data-quick-target]').forEach(button => button.addEventListener('click', () => {
+        quickTarget = button.dataset.quickTarget;
+        renderQuick();
+      }));
+      renderQuick();
+
 
       const loadResults = async () => {
         const context = getPreviewContext ? getPreviewContext() : null;
@@ -2392,6 +2631,7 @@ async function openRulesModal(onApply, getPreviewContext = null) {
         try {
           const params = new URLSearchParams({
             name: context.name || '', url: context.url || '', source: context.source || '',
+            subgroup: context.subgroup_name || '',
             filter: effectiveFilter, exclude: effectiveExclude,
             rename_season: String(context.rename_season || 0),
             rename_offset: String(context.rename_offset || 0),
@@ -2400,6 +2640,9 @@ async function openRulesModal(onApply, getPreviewContext = null) {
           const data = await api(`/api/rename/preview?${params}`);
           if (token !== resultToken) return;
           renderRuleResults(resultsBox, data);
+          if (data.total > 0 && Number(data.matched) === 0) {
+            resultsBox.insertAdjacentHTML('afterbegin', `<div class="notice warn" style="margin:6px 0 8px">${icon('alert')}<span>当前规则没有匹配任何条目。请检查语言/字幕/内封等标签是否存在于实际标题，或检查排除规则是否命中了全部条目。</span></div>`);
+          }
           if (!autoApplied && (state.config.offline || {}).auto_rules) {
             autoApplied = true;
             applyBestRules(true);
@@ -2425,12 +2668,51 @@ async function openRulesModal(onApply, getPreviewContext = null) {
         container: ['mkv', 'mp4'],
         resolution: ['r1080', 'r2160', 'r720'],
       };
+      const templateFitsTitles = (template, titles) => {
+        const lines = String(template.filter || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+        if (!lines.length) return true;
+        const matchesLine = (line, title) => {
+          let pattern = line.replace(/^\{\{.+?\}\}:/, '');
+          let flags = '';
+          if (pattern.startsWith('(?i)')) { flags = 'i'; pattern = pattern.slice(4); }
+          try { return new RegExp(pattern, flags).test(title); } catch (_) { return false; }
+        };
+        return lines.every(line => titles.some(title => matchesLine(line, title)));
+      };
       const applyBestRules = (silent = false) => {
         if (!resultsBox._ruleData) {
           toast('正在读取 RSS，请稍候再试', 'error');
           return;
         }
+        autoApplied = true;
         const titles = (resultsBox._ruleData.items || []).map(item => item.title);
+        const autoCustomLines = () => Object.values((state.autoPriority && state.autoPriority.custom) || {}).flat().map(line => String(line || '').trim()).filter(Boolean).filter(line => {
+          let pattern = line.replace(/^\{\{.+?\}\}:/, '');
+          if (pattern.startsWith('(?i)')) pattern = pattern.slice(4);
+          try { return titles.some(title => new RegExp(pattern, 'i').test(title)); } catch (_) { return false; }
+        });
+        const existingFilter = String(baseFilterEl?.value || '').trim();
+        const existingExclude = String(baseExcludeEl?.value || '').trim();
+        if (existingFilter || existingExclude) {
+          activeTemplate = '__auto';
+          renderTemplates();
+          renderBubbles();
+          if (!silent) toast('已保留字幕组已有规则', 'success');
+          return;
+        }
+        const autoTemplate = usableTemplates.find(template => templateFitsTitles(template, titles));
+        if (autoTemplate) {
+          activeTemplate = '__auto';
+          baseFilterEl.value = [templateFilter(autoTemplate), ...autoCustomLines()].filter(Boolean).join('\n');
+          baseExcludeEl.value = templateExclude(autoTemplate);
+          for (const key of Object.keys(selected)) selected[key] = '';
+          groups.clear();
+          renderTemplates();
+          renderBubbles();
+          draw();
+          if (!silent) toast('已自动应用规则，匹配/排除气泡已更新', 'success');
+          return;
+        }
         const chosen = [];
         for (const category of data.categories || []) {
           const configured = (state.config && state.config.offline && state.config.offline[`auto_${category.id}`]) || [];
@@ -2452,6 +2734,15 @@ async function openRulesModal(onApply, getPreviewContext = null) {
           }
           selected[category.id] = picked;
         }
+        const autoRules = build();
+        const customLines = autoCustomLines();
+        baseFilterEl.value = [autoRules.filter, ...customLines].filter(Boolean).join('\n');
+        baseExcludeEl.value = autoRules.exclude;
+        for (const key of Object.keys(selected)) selected[key] = '';
+        groups.clear();
+        activeTemplate = '__auto';
+        renderTemplates();
+        renderBubbles();
         draw();
         if (!silent) toast(chosen.length ? `已自动选择：${chosen.join(' / ')}，点击「应用到订阅」保存` : '当前 RSS 没有可匹配的规则选项', chosen.length ? 'success' : 'error');
       };
@@ -2496,7 +2787,6 @@ async function openRulesModal(onApply, getPreviewContext = null) {
         }));
       };
 
-      el.querySelector('#rules-best').addEventListener('click', applyBestRules);
       el.querySelector('#rules-clear').addEventListener('click', () => {
         for (const key of Object.keys(selected)) selected[key] = '';
         groups.clear();
@@ -2579,6 +2869,7 @@ function openFeedModal(index, prefill = null) {
   const feed = editing ? { ...state.config.rss[index] } : {
     site: '',
     name: prefill?.name || '',
+    subgroup_name: prefill?.subgroup_name || prefill?.subgroup || '',
     url: prefill?.url || '',
     source: prefill?.source || 'mikan',
     enabled: true,
@@ -2634,34 +2925,24 @@ function openFeedModal(index, prefill = null) {
           <div class="feed-form-section">
             <div class="feed-form-section-head">基本信息</div>
             <div class="form-grid">
-              <label class="field"><span>标题 *</span><input class="input" id="feed-name" value="${esc(feed.name)}" placeholder="例如：药屋少女的呢喃"></label>
-              <label class="field"><span>启用订阅</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="feed-enabled" ${feed.enabled !== false ? 'checked' : ''}><span></span></span></span></label>
-            </div>
-          </div>
-          <div class="feed-form-section">
-            <div class="feed-form-section-head">RSS 来源</div>
-            <div class="form-grid">
-              <div class="field span-2 feed-main-rss feed-rss-field">
-                <span class="field-label">主 RSS <button class="btn btn-sm btn-ghost" type="button" id="feed-main-rules">规则</button></span>
-                <div class="feed-main-rss-row">
-                  <input class="input" id="feed-subgroup-name" value="${esc(mainSubgroup)}" placeholder="字幕组名称，例如 LoliHouse">
-                  <input class="input mono" id="feed-url" value="${esc(feed.url)}" placeholder="https://...">
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="feed-form-section">
-            <div class="feed-form-section-head">TMDB 与 BGM</div>
-            <div class="form-grid">
-              <label class="field feed-tmdb-line"><span>TMDB ID</span>
+              <label class="field span-2"><span>标题 *</span><input class="input" id="feed-name" value="${esc(feed.name)}" placeholder="例如：药屋少女的呢喃"></label>
+              <label class="field span-2 feed-tmdb-line"><span>TMDB ID</span>
                 <div class="feed-tmdb-row">
                   <input class="input mono" id="feed-tmdb-id" value="${esc(feed.tmdb_id || '')}" placeholder="输入 ID">
-                  <button class="btn btn-sm" type="button" id="feed-tmdb-auto">${icon('refresh')}自动</button>
-                  <button class="btn btn-sm" type="button" id="feed-tmdb-search">${icon('search')}搜索</button>
+                  <button class="btn btn-sm btn-icon-only" type="button" id="feed-tmdb-auto" title="自动匹配 TMDB ID" aria-label="自动匹配 TMDB ID">${icon('refresh')}</button>
+                  <button class="btn btn-sm btn-icon-only" type="button" id="feed-tmdb-search" title="搜索 TMDB" aria-label="搜索 TMDB">${icon('search')}</button>
                   <select class="select select-compact" id="feed-tmdb-type"><option value="tv" ${(feed.tmdb_type || 'tv') === 'tv' ? 'selected' : ''}>TV</option><option value="movie" ${feed.tmdb_type === 'movie' ? 'selected' : ''}>Movie</option></select>
                 </div>
               </label>
               <label class="field span-2"><span>BGM 链接</span><input class="input mono" id="feed-bgm-url" value="${esc(initialBgm)}" placeholder="https://bgm.tv/subject/665390"></label>
+            </div>
+          </div>
+          <div class="feed-form-section">
+            <div class="feed-form-section-head">RSS 来源</div>
+            <div class="feed-rss-source-row">
+              <input class="input feed-rss-subgroup" id="feed-subgroup-name" value="${esc(mainSubgroup)}" placeholder="字幕组名称，例如 LoliHouse">
+              <button class="btn btn-sm" type="button" id="feed-subgroup-detect">${icon('refresh')}获取</button>
+              <input class="input mono feed-rss-url" id="feed-url" value="${esc(feed.url)}" placeholder="https://...">
             </div>
           </div>
           <div class="feed-form-section">
@@ -2673,12 +2954,15 @@ function openFeedModal(index, prefill = null) {
               </label>
               <label class="field"><span>集数偏移</span><input class="input input-compact" id="feed-rename-offset" type="number" min="-1000" max="1000" value="${Number(feed.rename_offset || 0)}"><span class="hint">RSS 集数与实际相差几集</span></label>
               <label class="field"><span>总集数</span><input class="input input-compact" id="feed-total-episodes" type="number" min="0" max="10000" placeholder="总集数" value="${Number(feed.total_episodes || 0)}"><span class="hint">0 表示未设置</span></label>
-              <label class="field"><span>播出季度</span><div class="feed-quarter-editor"><input class="input input-compact" id="feed-quarter-year" type="number" min="2000" max="2100" placeholder="年份" value="${quarterOf(feed) ? quarterOf(feed).slice(0,4) : new Date().getFullYear()}"><select class="select" id="feed-quarter-month">${["01","04","07","10"].map(m => `<option value="${m}" ${((quarterOf(feed) ? quarterOf(feed).slice(5) : String(Math.floor(new Date().getMonth()/3) === 0 ? "01" : Math.floor(new Date().getMonth()/3) === 1 ? "04" : Math.floor(new Date().getMonth()/3) === 2 ? "07" : "10")) === m) ? "selected" : ""}>${m === "01" ? "1月 / Q1" : m === "04" ? "4月 / Q2" : m === "07" ? "7月 / Q3" : "10月 / Q4"}</option>`).join("")}</select></div><span class="hint">仅用于显示和筛选，不参与重命名</span></label>
+              <label class="field"><span>播出季度</span><div class="feed-quarter-editor"><input class="input input-compact" id="feed-quarter-year" type="number" min="2000" max="2100" placeholder="年份" value="${quarterOf(feed) ? quarterOf(feed).slice(0,4) : new Date().getFullYear()}"><select class="select" id="feed-quarter-month">${["01","04","07","10"].map(m => `<option value="${m}" ${((quarterOf(feed) ? quarterOf(feed).slice(5) : String(Math.floor(new Date().getMonth()/3) === 0 ? "01" : Math.floor(new Date().getMonth()/3) === 1 ? "04" : Math.floor(new Date().getMonth()/3) === 2 ? "07" : "10")) === m) ? "selected" : ""}>${m}</option>`).join("")}</select></div><span class="hint">仅用于显示和筛选，不参与重命名</span></label>
             </div>
           </div>
+          <div class="feed-form-section feed-enabled-section">
+            <div class="feed-form-section-head">订阅状态</div>
+            <label class="field span-2"><span>启用订阅</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="feed-enabled" ${feed.enabled !== false ? 'checked' : ''}><span></span></span><span>关闭后不会参与自动运行</span></span></label>
+            <label class="field span-2"><span>主 RSS 完成后自动停用</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="feed-auto-disable" ${feed.auto_disable ? 'checked' : ''}><span></span></span><span>主 RSS 下载进度达到总集数后自动关闭启用</span></span></label>
+          </div>
           ${editing ? `<div class="feed-edit-actions">
-            <button class="btn btn-soft" type="button" id="feed-action-run">${icon('play')}运行订阅</button>
-            <button class="btn" type="button" id="feed-action-copy">${icon('link')}复制 RSS</button>
             <button class="btn" type="button" id="feed-action-toggle">${feed.enabled === false ? '启用订阅' : '禁用订阅'}</button>
             <button class="btn" type="button" id="feed-action-reset">重置为未完成</button>
             <span class="spacer"></span>
@@ -2729,13 +3013,14 @@ function openFeedModal(index, prefill = null) {
             </div>
           </div>
           <div class="feed-form-section">
-            <div class="feed-form-section-head">规则与预览</div>
+            <div class="feed-form-section-head">规则与匹配</div>
+            <div class="feed-rule-summary" id="feed-rule-summary"></div>
             <div class="feed-action-row">
-              <button class="btn btn-sm" type="button" id="feed-rules">${icon('filter')}规则与重命名</button>
+              <button class="btn btn-sm" type="button" id="feed-rules">${icon('filter')}配置规则与匹配</button>
               <button class="btn btn-sm" type="button" id="feed-item-preview">${icon('eye')}预览条目</button>
               <button class="btn btn-sm" type="button" id="feed-preview">${icon('zap')}测试订阅</button>
             </div>
-            <p class="feed-action-hint">规则与重命名：过滤、排除与重命名模板；预览条目：合并主 RSS 与全部备用 RSS 按集数排序；测试订阅：抓取并应用规则显示匹配结果。</p>
+            <p class="feed-action-hint">配置规则与匹配：选择字幕组模板，或手动编辑匹配/排除规则并实时预览；预览条目：合并主 RSS 与全部备用 RSS 按集数排序；测试订阅：抓取并应用规则显示匹配结果。</p>
             <div id="feed-preview-box"></div>
           </div>
         </section>
@@ -2744,9 +3029,16 @@ function openFeedModal(index, prefill = null) {
     onMount(el, close) {
       const form = $('#feed-form', el);
       if (form) form.addEventListener('submit', event => event.preventDefault());
+      const updateRuleSummary = () => {
+        const box = $('#feed-rule-summary', el);
+        if (!box) return;
+        const filter = String(local.filter || '').trim();
+        const exclude = String(local.exclude || '').trim();
+        box.innerHTML = `<div><span>匹配</span><code>${esc(filter || '全部')}</code></div><div><span>排除</span><code>${esc(exclude || '无')}</code></div><button class="btn btn-sm btn-ghost" type="button" id="feed-rules-summary">调整</button>`;
+        box.querySelector('#feed-rules-summary')?.addEventListener('click', () => $('#feed-rules', el).click());
+      };
+      updateRuleSummary();
       if (editing) {
-        $('#feed-action-run', el).addEventListener('click', () => { close(); setTimeout(() => runSingleFeed(feed), 80); });
-        $('#feed-action-copy', el).addEventListener('click', () => copyText(feed.url));
         $('#feed-action-toggle', el).addEventListener('click', () => { close(); toggleFeed(index); });
         $('#feed-action-delete', el).addEventListener('click', () => { close(); deleteFeed(index); });
         $('#feed-action-reset', el).addEventListener('click', () => {
@@ -2783,23 +3075,33 @@ function openFeedModal(index, prefill = null) {
       if (subgroupBox) {
         const subgroupRow = (group = {}, index = 0, total = 1) => {
           const enabled = group.enabled !== false;
-          return `<div class="feed-subgroup-row" data-subgroup-row data-index="${index}">
-            <input class="input" data-sg="name" value="${esc(subgroupLabel(group.name, feed.name))}" placeholder="字幕组名称">
-            <input class="input mono" data-sg="url" value="${esc(group.url || '')}" placeholder="备用 RSS 地址">
-            <div class="feed-subgroup-nums"><label>季 <input class="input" data-sg="season" type="number" min="0" max="1000" value="${Number(group.season || 0)}"></label><label>偏移 <input class="input" data-sg="offset" type="number" min="-1000" max="1000" value="${Number(group.offset || 0)}"></label></div>
-            <div class="feed-subgroup-actions">
-              <button class="btn btn-sm btn-ghost" type="button" data-set-main title="设为第一个 RSS（主 RSS）">设为主</button>
-              <button class="btn btn-sm btn-ghost btn-icon-only" type="button" data-subgroup-up title="上移" ${index === 0 ? 'disabled' : ''}>↑</button>
-              <button class="btn btn-sm btn-ghost btn-icon-only" type="button" data-subgroup-down title="下移" ${index === total - 1 ? 'disabled' : ''}>↓</button>
-              <button class="btn btn-sm btn-ghost ${group.filter || group.exclude ? 'has-rules' : ''}" type="button" data-subgroup-rules title="${group.filter || group.exclude ? '已设置独立规则' : '未设置规则，不过滤'}">规则</button>
-              <label class="check"><span class="switch"><input type="checkbox" data-sg="enabled" ${enabled ? 'checked' : ''}><span></span></span>启用</label>
+          return `<div class="feed-subgroup-row feed-subgroup-card" data-subgroup-row data-index="${index}">
+            <div class="feed-subgroup-top">
+              <span class="rss-role-badge backup">备用</span>
+              <input class="input feed-subgroup-name" data-sg="name" value="${esc(subgroupLabel(group.name, feed.name))}" placeholder="字幕组名称">
+              <button class="btn btn-sm btn-ghost btn-icon-only" type="button" data-subgroup-detect title="根据 RSS 标题识别字幕组">${icon('refresh')}</button>
+              <label class="check feed-subgroup-enabled"><span class="switch"><input type="checkbox" data-sg="enabled" ${enabled ? 'checked' : ''}><span></span></span>启用</label>
               <button class="btn btn-sm btn-ghost btn-icon-only" type="button" data-remove-subgroup title="删除">${icon('trash')}</button>
-              <input type="hidden" data-sg="filter" value="${esc(group.filter || '')}">
-              <input type="hidden" data-sg="exclude" value="${esc(group.exclude || '')}">
-              <input type="hidden" data-sg="start_episode" value="${Number(group.start_episode || 0)}">
             </div>
+            <input class="input mono feed-subgroup-url" data-sg="url" value="${esc(group.url || '')}" placeholder="备用 RSS 地址">
+            <div class="feed-subgroup-bottom">
+              <div class="feed-subgroup-meta">
+                <label>季 <input class="feed-subgroup-num" data-sg="season" type="number" min="0" max="1000" value="${Number(group.season || 0)}"></label>
+                <label>偏移 <input class="feed-subgroup-num" data-sg="offset" type="number" min="-1000" max="1000" value="${Number(group.offset || 0)}"></label>
+              </div>
+              <div class="feed-subgroup-actions">
+                <button class="btn btn-sm btn-ghost" type="button" data-set-main title="设为第一个 RSS（主 RSS）">设主</button>
+                <button class="btn btn-sm btn-ghost btn-icon-only" type="button" data-subgroup-up title="上移" ${index === 0 ? 'disabled' : ''}>↑</button>
+                <button class="btn btn-sm btn-ghost btn-icon-only" type="button" data-subgroup-down title="下移" ${index === total - 1 ? 'disabled' : ''}>↓</button>
+                <button class="btn btn-sm btn-ghost ${group.filter || group.exclude ? 'has-rules' : ''}" type="button" data-subgroup-rules title="${group.filter || group.exclude ? '已设置独立规则' : '未设置规则，不过滤'}">规则</button>
+              </div>
+            </div>
+            <input type="hidden" data-sg="filter" value="${esc(group.filter || '')}">
+            <input type="hidden" data-sg="exclude" value="${esc(group.exclude || '')}">
+            <input type="hidden" data-sg="start_episode" value="${Number(group.start_episode || 0)}">
           </div>`;
         };
+
         const currentMain = () => ({
           name: $('#feed-subgroup-name', el).value.trim(),
           url: $('#feed-url', el).value.trim(),
@@ -2812,11 +3114,10 @@ function openFeedModal(index, prefill = null) {
         });
         const renderSubgroups = () => {
           const main = currentMain();
-          const mainRow = `<div class="feed-subgroup-row feed-main-source-row" data-main-source-row>
-            <div class="feed-subgroup-source"><span class="badge badge-primary role-badge">主 RSS</span><strong>${esc(main.name || '未命名字幕组')}</strong></div>
-            <div class="feed-subgroup-source"><code title="${esc(main.url)}">${esc(main.url)}</code></div>
-            <div class="feed-subgroup-nums"><span>季 ${main.season || 0}</span><span>偏移 ${main.offset || 0}</span>${main.filter || main.exclude ? '<span class="badge badge-info">独立规则</span>' : ''}</div>
-            <div class="feed-subgroup-actions"><button class="btn btn-sm btn-ghost" type="button" data-edit-main>编辑</button></div>
+          const mainRow = `<div class="feed-main-source-card" data-main-source-row>
+            <div class="feed-main-source-top"><span class="badge badge-primary role-badge">主 RSS</span><strong>${esc(main.name || '未命名字幕组')}</strong><button class="btn btn-sm btn-ghost" type="button" data-edit-main>编辑</button></div>
+            <code class="feed-main-source-url" title="${esc(main.url)}">${esc(main.url)}</code>
+            <div class="feed-main-source-meta"><span>季 ${main.season || 0}</span><span>偏移 ${main.offset || 0}</span>${main.filter || main.exclude ? '<span class="badge badge-info">独立规则</span>' : ''}</div>
           </div>`;
           subgroupBox.innerHTML = mainRow + ((local.subgroups || []).map((group, index) => subgroupRow(group, index, (local.subgroups || []).length)).join('') || '<div class="hint">还没有备用字幕组</div>');
           subgroupBox.querySelectorAll('[data-edit-main]').forEach(button => button.addEventListener('click', () => activateFeedTab('basic')));
@@ -2853,6 +3154,13 @@ function openFeedModal(index, prefill = null) {
               renderSubgroups();
             });
           });
+          subgroupBox.querySelectorAll('[data-subgroup-detect]').forEach(button => {
+            button.addEventListener('click', () => {
+              const row = button.closest('[data-subgroup-row]');
+              const url = row.querySelector('[data-sg="url"]').value.trim();
+              detectSubgroup(button, url, name => { row.querySelector('[data-sg="name"]').value = name; });
+            });
+          });
           subgroupBox.querySelectorAll('[data-subgroup-rules]').forEach(button => {
             button.addEventListener('click', () => {
               const rows = [...subgroupBox.querySelectorAll('[data-subgroup-row]')];
@@ -2862,7 +3170,8 @@ function openFeedModal(index, prefill = null) {
               const group = local.subgroups[index];
               const context = {
                 ...feed,
-                name: group.name || feed.name || '',
+                name: feed.name || '',
+                subgroup_name: group.name || '',
                 url: group.url || feed.url || '',
                 filter: group.filter || '',
                 exclude: group.exclude || '',
@@ -2902,17 +3211,34 @@ function openFeedModal(index, prefill = null) {
           local.subgroups = [...subgroupBox.querySelectorAll('[data-subgroup-row]')].map(readSubgroupRow);
           const source = sourceInfo(feed.source, feed.url).key;
           openBrowseModal(source, pick => {
-            local.subgroups.push({
+            const group = {
               name: pick.subgroup || pick.title || '备用字幕组',
               url: pick.url,
               season: Number(feed.rename_season || 0),
               offset: Number(feed.rename_offset || 0),
               start_episode: 0,
               enabled: true,
-            });
-            renderSubgroups();
+              filter: '',
+              exclude: '',
+            };
+            // Only attach the backup RSS after the rules page is confirmed.
+            openRulesModal((filter, exclude) => {
+              group.filter = filter;
+              group.exclude = exclude;
+              local.subgroups.push(group);
+              renderSubgroups();
+            }, () => ({
+              name: feed.name || '',
+              subgroup_name: group.name,
+              url: group.url,
+              season: group.season,
+              offset: group.offset,
+              filter: '',
+              exclude: '',
+            }));
           }, feed.name || '');
         });
+
       }
       const finalCidInput = $('#feed-final-cid', el);
       const finalCidName = $('#feed-final-cid-name', el);
@@ -2949,6 +3275,37 @@ function openFeedModal(index, prefill = null) {
       const helpBox = $('#source-help', el);
       const browseRow = $('#feed-browse-row', el);
       const urlInput = $('#feed-url', el);
+      const subgroupInput = $('#feed-subgroup-name', el);
+      let subgroupResolveTimer = null;
+      let subgroupResolveToken = 0;
+      let subgroupAutoResolved = false;
+      let subgroupTouched = false;
+      const scheduleSubgroupResolve = () => {
+        if (editing) return;
+        clearTimeout(subgroupResolveTimer);
+        subgroupResolveTimer = setTimeout(async () => {
+          const rawURL = String(urlInput.value || '').trim();
+          if (!rawURL || subgroupTouched) return;
+          const current = String(subgroupInput.value || '').trim();
+          const slug = urlSubgroupName(rawURL);
+          if (current && current.toLowerCase() !== String(slug || '').toLowerCase() && !subgroupAutoResolved) return;
+          const token = ++subgroupResolveToken;
+          try {
+            const data = await api('/api/feeds/subgroup-resolve?url=' + encodeURIComponent(rawURL));
+            if (token !== subgroupResolveToken || !data.subgroup) return;
+            subgroupInput.value = data.subgroup;
+            local.subgroupName = data.subgroup;
+            subgroupAutoResolved = true;
+          } catch (_) { /* keep the URL-derived label when the RSS cannot be read */ }
+        }, 550);
+      };
+      subgroupInput?.addEventListener('input', () => { subgroupTouched = true; subgroupAutoResolved = false; });
+      urlInput.addEventListener('input', () => {
+        if (subgroupAutoResolved) { subgroupInput.value = ''; subgroupAutoResolved = false; }
+        subgroupTouched = false;
+        scheduleSubgroupResolve();
+      });
+      setTimeout(scheduleSubgroupResolve, 300);
 
       const captureProviders = () => {
         $$('[data-provider]', providerBox).forEach(input => {
@@ -2975,9 +3332,10 @@ function openFeedModal(index, prefill = null) {
           $('#feed-browse', el).addEventListener('click', () => {
             close();
             openBrowseModal(local.source, pick => {
-              openFeedModal(-1, {
+              openNewFeedWithRules({
                 source: pick.source,
                 name: pick.title,
+                subgroup_name: pick.subgroup || '',
                 url: pick.url,
               });
             });
@@ -3019,21 +3377,36 @@ function openFeedModal(index, prefill = null) {
         openRulesModal((filter, exclude) => {
           local.filter = filter;
           local.exclude = exclude;
+          updateRuleSummary();
           markDirty();
         }, () => readFeedForm(el, local));
       });
-      $('#feed-main-rules').addEventListener('click', () => {
-        openRulesModal((filter, exclude) => {
-          local.filter = filter;
-          local.exclude = exclude;
-          markDirty();
-        }, () => readFeedForm(el, local));
+      const detectSubgroup = async (button, rawURL, apply) => {
+        const url = String(rawURL || '').trim();
+        if (!url) { toast('请先填写 RSS 地址', 'error'); return; }
+        setLoading(button, true, '识别中');
+        try {
+          const data = await api('/api/feeds/subgroup-resolve?url=' + encodeURIComponent(url));
+          if (!data.subgroup) { toast('没有从 RSS 中识别到字幕组', 'error'); return; }
+          apply(data.subgroup);
+          toast('已识别字幕组：' + data.subgroup, 'success');
+        } catch (err) {
+          toast('识别失败：' + err.message, 'error', 5200);
+        } finally {
+          setLoading(button, false);
+        }
+      };
+      $('#feed-subgroup-detect')?.addEventListener('click', () => {
+        detectSubgroup($('#feed-subgroup-detect', el), urlInput.value, name => {
+          $('#feed-subgroup-name', el).value = name;
+          local.subgroupName = name;
+        });
       });
       $('#feed-auto-backup-help', el)?.addEventListener('click', () => openModal({
         title: '自动加入备用 RSS 说明',
         size: 'narrow',
         subtitle: '仅对该订阅生效',
-        body: `<div class="notice">${icon('info')}<span>主 RSS 连续添加失败达到设定次数后，才会检查该订阅的缺失集和喜好字幕组，并尝试添加备用 RSS。全局「自动添加备用字幕组」也必须开启；关闭本开关可单独跳过该订阅。</span></div>`,
+        body: `<div class="notice">${icon('info')}<span>满足任一条件后会检查该订阅的缺失集和喜好字幕组，并尝试添加备用 RSS：主 RSS 连续添加失败达到设定次数；或开启「摸鱼后自动补充」且超过摸鱼提醒天数。全局「自动添加备用字幕组」也必须开启；关闭本开关可单独跳过该订阅。</span></div>`,
         footer: '<button class="btn btn-primary" data-action="modal-close">知道了</button>',
       }));
       $('#feed-auto-offset-help', el)?.addEventListener('click', () => openModal({
@@ -3243,7 +3616,7 @@ function openFeedModal(index, prefill = null) {
           close();
           toast(editing ? '订阅已更新' : '订阅已添加', 'success');
           if (state.route === 'feeds') renderFeedsPage();
-          loadStatus().catch(() => {});
+          loadStatus().catch(err => console.debug('[AniFeed]', err));
         } catch (err) {
           toast(err.message, 'error', 5200);
         } finally {
@@ -3263,6 +3636,7 @@ function readFeedForm(root, local) {
     url: ($('#feed-url', root) || {}).value?.trim() || '',
     source: local.source,
     enabled: $('#feed-enabled', root).checked,
+    auto_disable: !!($('#feed-auto-disable', root) || {}).checked,
     cid: local.cid || '',
     savepath: local.savepath || '',
     filter: local.filter || '',
@@ -3470,7 +3844,7 @@ async function deleteFeed(index) {
     state.meta = resp.meta;
     toast('订阅已删除', 'success');
     renderFeedsPage();
-    loadStatus().catch(() => {});
+    loadStatus().catch(err => console.debug('[AniFeed]', err));
   } catch (err) {
     toast(err.message, 'error', 5200);
   }
@@ -3514,7 +3888,7 @@ function showJobModal(job) {
             state.jobTimer = setTimeout(poll, 1500);
           } else {
             state.jobTimer = null;
-            loadStatus().catch(() => {});
+            loadStatus().catch(err => console.debug('[AniFeed]', err));
             if (state.route === 'dashboard') loadDashboard();
             if (state.route === 'tasks') loadTasksPage();
             if (state.route === 'history') loadHistoryPage();
@@ -3563,7 +3937,7 @@ async function loadTasksPage(force = false) {
     renderTasksPage();
     if (!force) return;
   } else {
-    $('#view').innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取 115 离线任务…</span></div>`;
+    $('#view').innerHTML = pageSkeleton('tasks');
   }
   try {
     if (!state.status) await loadStatus();
@@ -3614,6 +3988,7 @@ function renderTasksPage() {
       <button class="btn btn-sm" id="clear-menu-btn">${icon('trash')}清理任务</button>
     </div>
     <div class="card" id="task-table-card"></div>
+    <div class="card" id="qb-fallback-card"></div>
     <div class="sticky-save" style="margin-top:16px">
       <span class="hint" style="color:var(--muted)">提示：清理只作用于 115 离线任务列表，不会删除网盘里的文件。</span>
       <span class="spacer"></span>
@@ -3634,6 +4009,28 @@ function renderTasksPage() {
   $('#clear-menu-btn').addEventListener('click', openClearMenu);
   $$('[data-clear]').forEach(btn => btn.addEventListener('click', () => clearTasks(Number(btn.dataset.clear))));
   renderTaskTable();
+}
+
+async function loadQBFallbackCard() {
+  const box = $('#qb-fallback-card');
+  if (!box) return;
+  box.innerHTML = '<div class="section-title"><span class="ico">' + icon('download') + '</span><div><h3>qB 兜底记录</h3><p>115 失败后已提交到 qBittorrent 的任务</p></div></div><div class="section-body"><div class="skeleton-line"></div><div class="skeleton-line short"></div></div>';
+  try {
+    const data = await api('/api/qb/fallback?limit=20');
+    if (!box.isConnected) return;
+    const items = data.items || [];
+    if (!items.length) {
+      box.innerHTML = '<div class="section-title"><span class="ico">' + icon('download') + '</span><div><h3>qB 兜底记录</h3><p>115 失败后已提交到 qBittorrent 的任务</p></div></div>' + emptyBlock('cloud', '暂无 qB 兜底任务', '115 连续失败达到阈值后，任务会出现在这里。');
+      return;
+    }
+    box.innerHTML = '<div class="section-title"><span class="ico">' + icon('download') + '</span><div><h3>qB 兜底记录</h3><p>115 失败后已提交到 qBittorrent 的任务</p></div></div>' +
+      '<div class="table-wrap"><table class="table task-table"><thead><tr><th>任务名称</th><th>状态</th><th>提交时间</th><th>Hash</th></tr></thead><tbody>' +
+      items.map(item => '<tr><td class="name-cell" data-label="任务"><div class="title">' + esc(item.title || '未命名任务') + '</div></td><td data-label="状态"><span class="badge ' + (item.state === 'completed' ? 'badge-success' : 'badge-info') + '">' + (item.state === 'completed' ? '已完成' : '已提交') + '</span></td><td data-label="提交时间">' + esc(new Date(item.created_at).toLocaleString('zh-CN')) + '</td><td class="numeric" data-label="Hash">' + esc((item.info_hash || '').slice(0, 16)) + '</td></tr>').join('') +
+      '</tbody></table></div>';
+  } catch (err) {
+    if (!box.isConnected) return;
+    box.innerHTML = '<div class="section-title"><span class="ico">' + icon('download') + '</span><div><h3>qB 兜底记录</h3><p>115 失败后已提交到 qBittorrent 的任务</p></div></div>' + emptyBlock('alert', '读取失败', err.message || '暂时无法读取 qB 兜底记录。');
+  }
 }
 
 function visibleTasks() {
@@ -3752,7 +4149,7 @@ function openMagnetModal() {
           toast(`已提交 ${data.added} / ${data.total} 个任务`, 'success');
           if (state.route === 'tasks') loadTasksPage();
           if (state.route === 'dashboard') loadDashboard();
-          loadStatus().catch(() => {});
+          loadStatus().catch(err => console.debug('[AniFeed]', err));
         } catch (err) {
           toast(err.message, 'error', 5200);
         } finally {
@@ -3771,10 +4168,10 @@ async function loadHistoryPage() {
   if (state.historyLoaded) {
     renderHistoryPage();
   } else {
-    $('#view').innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取历史记录…</span></div>`;
+    $('#view').innerHTML = pageSkeleton('history');
   }
   try {
-    await ensureConfig().catch(() => {});
+    await ensureConfig().catch(err => console.debug('[AniFeed]', err));
     const params = new URLSearchParams({ limit: String(state.historyLimit) });
     if (state.historyName) params.set('name', state.historyName);
     const data = await api(`/api/history?${params}`);
@@ -3837,7 +4234,7 @@ async function loadLogsPage() {
   if (state.logsLoaded) {
     renderLogsPage();
   } else if (!view.querySelector('#log-pre') && !view.querySelector('#log-list')) {
-    view.innerHTML = `<div class="page-loading"><span class="spinner"></span><span>正在读取日志…</span></div>`;
+    view.innerHTML = pageSkeleton('logs');
   }
   try {
     const data = await api('/api/logs?limit=500');
@@ -4021,1398 +4418,49 @@ function renderLogLines(lines) {
   }).join('\n');
 }
 
-async function loadSettingsPage() {
-  const epoch = state.routeEpoch;
-  if (state.config) {
-    renderSettingsPage();
-  } else {
-    renderSettingsSkeleton();
-  }
-  try {
-    const resp = await api('/api/config');
-    applyConfigState(resp.config, resp.meta);
-    await loadStatus().catch(() => {});
-  } catch (err) {
-    if (state.routeEpoch === epoch) renderFatal(err.message);
-    return;
-  }
-  if (state.routeEpoch !== epoch) return;
-  renderSettingsPage();
-}
-
-const PRIORITY_META = {
-  language: { label: '语言', options: [['chs', '简体'], ['bilingual', '简繁'], ['cht', '繁体']] },
-  subtitle: { label: '字幕', options: [['softsub', '内封'], ['hardsub', '内嵌'], ['external', '外挂']] },
-  container: { label: '容器', options: [['mkv', 'MKV'], ['mp4', 'MP4']] },
-  resolution: { label: '分辨率', options: [['r1080', '1080p'], ['r2160', '4K'], ['r720', '720p']] },
-};
-const PRIORITY_DEFAULTS = {
-  language: ['chs', 'bilingual', 'cht'],
-  subtitle: ['softsub', 'hardsub', 'external'],
-  container: ['mkv', 'mp4'],
-  resolution: ['r1080', 'r2160', 'r720'],
-};
-
-function initPriorityEditor(cfg) {
-  const box = $('#priority-editor');
-  if (!box) return;
-  const orders = {};
-  for (const key of Object.keys(PRIORITY_META)) {
-    const configured = ((cfg.offline || {})[`auto_${key}`] || []).filter(id => PRIORITY_META[key].options.some(([optionId]) => optionId === id));
-    orders[key] = configured.length ? configured : [...PRIORITY_DEFAULTS[key]];
-  }
-  state.autoPriority = orders;
-  const draw = () => {
-    box.innerHTML = Object.entries(PRIORITY_META).map(([key, meta]) => {
-      const parts = orders[key].map((id, index) => {
-        const label = (meta.options.find(([optionId]) => optionId === id) || [id, id])[1];
-        return `<span class="priority-item">${esc(label)}<span class="priority-buttons"><button type="button" data-priority-move="up" data-priority-key="${key}" data-priority-index="${index}" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-priority-move="down" data-priority-key="${key}" data-priority-index="${index}" ${index === orders[key].length - 1 ? 'disabled' : ''}>↓</button></span></span>`;
-      }).join('');
-      return `<div class="priority-row"><span class="priority-label">${esc(meta.label)}</span><div class="priority-list">${parts}</div></div>`;
-    }).join('');
-    $$('[data-priority-move]', box).forEach(button => button.addEventListener('click', () => {
-      const key = button.dataset.priorityKey;
-      const index = Number(button.dataset.priorityIndex);
-      const target = button.dataset.priorityMove === 'up' ? index - 1 : index + 1;
-      if (target < 0 || target >= orders[key].length) return;
-      [orders[key][index], orders[key][target]] = [orders[key][target], orders[key][index]];
-      draw();
-    }));
-  };
-  draw();
-}
-
-function initSettingsSections() {
-  const cards = $$('.settings-stack > section.card');
-  if (!cards.length) return;
-  const groupByTitle = {
-    '115 账号': 'connection',
-    '个性化': 'personal',
-    'AI 助手': 'connection',
-    '服务与访问': 'connection',
-    '默认离线设置': 'download',
-    'qBittorrent': 'download',
-    '自动运行': 'download',
-    '重命名': 'organize',
-    'TMDB': 'organize',
-    '洗版': 'organize',
-    '多字幕组': 'subgroups',
-    '喜好字幕组': 'subgroups',
-    '自动备用字幕组': 'subgroups',
-    '通知': 'notify',
-    '数据库与缓存': 'about',
-    '关于': 'about',
-  };
-  const sectionMeta = {
-    connection: ['连接与账号', '115 账号、AI 助手、Web 访问和代理设置'],
-    download: ['下载器', '115、qBittorrent 的账号、地址和保存设置'],
-    organize: ['整理与命名', '重命名、TMDB 关联和洗版'],
-    subgroups: ['字幕组', '多字幕组、喜好顺序和自动备用'],
-    notify: ['通知', '推送渠道、事件开关和模板'],
-    about: ['关于', '版本和项目信息'],
-    personal: ['个性化', '背景图、玻璃效果、强调色、导航配色与导入导出'],
-  };
-
-  const foldMeta = {
-    '自动运行': ['高级运行设置', '自动运行间隔、并发和通知行为'],
-    '洗版': ['高级整理设置', '洗版、清理和迁移规则'],
-    '多字幕组': ['实验功能', '多字幕组与多 RSS 共存'],
-    '自动备用字幕组': ['高级备用 RSS 设置', '失败触发、自动偏移和跳过策略'],
-    'AI 助手': ['AI 设置', 'DeepSeek 接口、权限与密钥'],
-  };
-  cards.forEach(card => {
-    const title = (card.querySelector('.section-title h3') || {}).textContent || '';
-    card.dataset.settingsGroup = groupByTitle[title.trim()] || 'connection';
-    const fold = foldMeta[title.trim()];
-    if (fold && !card.closest('.settings-fold')) {
-      const details = document.createElement('details');
-      details.className = 'settings-fold';
-      details.dataset.settingsGroup = card.dataset.settingsGroup;
-      details.innerHTML = `<summary><span class="fold-title">${fold[0]}</span><small>${fold[1]}</small><span class="fold-state"></span></summary><div class="settings-fold-body"></div>`;
-      card.parentNode.insertBefore(details, card);
-      details.querySelector('.settings-fold-body').appendChild(card);
-    }
-  });
-  // 连接与账号：115 账号 -> AI 助手 -> 服务与访问（放最后）
-  const CONNECTION_ORDER = { '115 账号': 0, 'AI 助手': 1, '服务与访问': 2 };
-  const stack = document.querySelector('.settings-stack');
-  if (stack) {
-    const conn = [...stack.children].filter(node => (node.dataset && node.dataset.settingsGroup) === 'connection');
-    conn.sort((a, b) => {
-      const titleOf = node => {
-        const h = node.querySelector('.section-title h3');
-        if (h) return h.textContent.trim();
-        const t = node.querySelector('.fold-title');
-        return t ? t.textContent.trim() : '';
-      };
-      const ra = CONNECTION_ORDER[titleOf(a)] ?? 99;
-      const rb = CONNECTION_ORDER[titleOf(b)] ?? 99;
-      return ra - rb;
-    });
-    conn.forEach(node => stack.appendChild(node));
-  }
-  // 关于页：关于 -> 数据库与缓存
-  const ABOUT_ORDER = { '关于': 0, '数据库与缓存': 1 };
-  if (stack) {
-    const about = [...stack.children].filter(node => (node.dataset && node.dataset.settingsGroup) === 'about');
-    about.sort((a, b) => {
-      const titleOf = node => { const h = node.querySelector('.section-title h3'); return h ? h.textContent.trim() : ''; };
-      return (ABOUT_ORDER[titleOf(a)] ?? 99) - (ABOUT_ORDER[titleOf(b)] ?? 99);
-    });
-    about.forEach(node => stack.appendChild(node));
-  }
-  const buttons = $$('[data-settings-section]');
-  if (!buttons.some(button => button.dataset.settingsSection === state.settingsSection)) state.settingsSection = 'connection';
-  const intro = $('#settings-section-intro');
-  const apply = () => {
-    const meta = sectionMeta[state.settingsSection] || sectionMeta.connection;
-    buttons.forEach(button => button.classList.toggle('active', button.dataset.settingsSection === state.settingsSection));
-    cards.forEach(card => {
-      card.style.display = card.dataset.settingsGroup === state.settingsSection ? '' : 'none';
-    });
-    $$('.settings-fold').forEach(fold => {
-      fold.style.display = fold.dataset.settingsGroup === state.settingsSection ? '' : 'none';
-    });
-    if (intro) intro.innerHTML = `<strong>${meta[0]}</strong><span>${meta[1]}</span>`;
-    const savebar = document.getElementById('settings-savebar');
-    if (savebar) savebar.style.display = state.settingsSection === 'personal' ? 'none' : '';
-  };
-  buttons.forEach(button => button.addEventListener('click', () => {
-    state.settingsSection = button.dataset.settingsSection;
-    apply();
-  }));
-  apply();
-}
-
-
-
-/* ===== 下拉多选 ===== */
-function initMultiSelects() {
-  const defs = [
-    { trigger: '#ms-content-trigger', menu: '#ms-content-menu', label: '#ms-content-label', items: '#notify-content-summary, #notify-content-details, #notify-content-errors, #notify-content-time' },
-    { trigger: '#ms-events-trigger', menu: '#ms-events-menu', label: '#ms-events-label', items: '.notify-event' },
-  ];
-  defs.forEach(function (def) {
-    const trigger = $(def.trigger);
-    const menu = $(def.menu);
-    const label = $(def.label);
-    if (!trigger || !menu || !label) return;
-    const sync = function () {
-      const names = $$(def.items).filter(function (el) { return el.checked; }).map(function (el) {
-        const row = el.closest('.ms-item, .check-inline');
-        if (!row) return el.dataset.event || '';
-        const copy = row.cloneNode(true);
-        const input = copy.querySelector('input');
-        if (input) input.remove();
-        return copy.textContent.trim();
-      }).filter(Boolean);
-      label.textContent = names.length ? names.join('、') : '未选择';
-      label.classList.toggle('is-empty', names.length === 0);
-    };
-    trigger.addEventListener('click', function (event) {
-      event.stopPropagation();
-      const open = menu.classList.toggle('open');
-      trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
-    });
-    $$(def.items).forEach(function (el) { el.addEventListener('change', sync); });
-    document.addEventListener('click', function (event) {
-      if (!menu.contains(event.target) && !trigger.contains(event.target)) menu.classList.remove('open');
-    });
-    sync();
-  });
-}
-
-
-/* ===== 开关行：开关在前，说明折叠 ===== */
-function enhanceSwitchRows() {
-  const content = document.getElementById('settings-content');
-  if (!content) return;
-  [...content.querySelectorAll('.check')].forEach(check => {
-    const field = check.closest('.field');
-    if (!field || field.dataset.switchRow) return;
-    const switchEl = check.querySelector('.switch');
-    if (!switchEl) return;
-    const titleEl = [...field.children].find(el => el !== check && el.tagName === 'SPAN' && !el.classList.contains('switch'));
-    if (!titleEl) return;
-    const descEl = [...check.children].find(el => el !== switchEl);
-    field.dataset.switchRow = '1';
-    field.classList.add('switch-row');
-
-    const row = document.createElement('div');
-    row.className = 'switch-row-inner';
-    row.appendChild(switchEl);
-
-    const title = document.createElement('span');
-    title.className = 'switch-title';
-    title.textContent = titleEl.textContent.trim();
-    row.appendChild(title);
-
-    const descText = descEl ? descEl.textContent.trim() : '';
-    if (descText) {
-      const more = document.createElement('button');
-      more.type = 'button';
-      more.className = 'switch-more';
-      more.textContent = '?';
-      more.setAttribute('aria-label', '查看说明');
-      const open = () => field.classList.add('desc-open');
-      const close = () => { if (!field.dataset.descPinned) field.classList.remove('desc-open'); };
-      more.addEventListener('mouseenter', open);
-      more.addEventListener('mouseleave', close);
-      more.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        const nowPinned = !field.dataset.descPinned;
-        if (nowPinned) field.dataset.descPinned = '1'; else delete field.dataset.descPinned;
-        field.classList.toggle('desc-open', nowPinned);
-      });
-      row.appendChild(more);
-    }
-
-    const spacer = document.createElement('span');
-    spacer.className = 'switch-spacer';
-    row.appendChild(spacer);
-
-    field.appendChild(row);
-    titleEl.remove();
-    if (descText) {
-      const desc = document.createElement('div');
-      desc.className = 'switch-desc';
-      desc.textContent = descText;
-      field.appendChild(desc);
-    }
-    check.remove();
-  });
-}
-
 function renderSettingsSkeleton() {
-  const skeletonCard = (title, rows = 3) => `<section class="card">
-    <div class="section-title"><span class="ico">${icon('settings')}</span><div><h3>${title}</h3><div class="skeleton-line short"></div></div></div>
-    <div class="section-body">${Array.from({ length: rows }).map(() => `<div class="skeleton-line"></div>`).join('')}</div>
+  const skeletonCard = (iconName, title, subtitle, rows = 3) => `<section class="card">
+    <div class="section-title"><span class="ico">${icon(iconName)}</span><div><h3>${title}</h3><p>${subtitle}</p></div></div>
+    <div class="section-body">${Array.from({ length: rows }).map(() => '<div class="skeleton-line"></div>').join('')}</div>
   </section>`;
   $('#view').innerHTML = `
     <div class="settings-grid"><div>
-      <div class="subtabs"><button disabled>连接与账号</button><button disabled>下载器</button><button disabled>整理与命名</button><button disabled>字幕组</button><button disabled>通知</button><button disabled>高级</button><button disabled>关于</button></div>
+      <div class="subtabs"><button disabled>账号与连接</button><button disabled>下载与通知</button><button disabled>整理与命名</button><button disabled>字幕组与规则</button><button disabled>外观与数据</button><button disabled>系统与关于</button></div>
       <div class="settings-loading-panel">
-        <div class="settings-stack">${skeletonCard('115 账号', 3)}${skeletonCard('默认离线设置', 5)}${skeletonCard('通知与站点', 4)}</div>
-        <div class="settings-loading-veil"><span class="spinner"></span><strong>正在读取配置…</strong></div>
+        <div class="settings-stack">
+          ${skeletonCard('cloud', '115 账号', '当前登录账号与连接状态', 3)}
+          ${skeletonCard('server', '服务与访问', 'Web UI 监听地址、登录保护与代理', 4)}
+          ${skeletonCard('info', 'AI 助手', 'DeepSeek 兼容 API，用于查询和受控操作', 3)}
+          ${skeletonCard('database', '数据库与缓存', 'SQLite 历史库与 115 请求节流参数', 3)}
+        </div>
       </div>
     </div></div>`;
 }
 
-function expandFinalPathPreview(template, sample) {
-  const now = new Date();
-  const seasonName = ['冬', '春', '夏', '秋'][Math.floor(now.getMonth() / 3)];
-  const values = {
-    title: sample.title || '冰之城墙',
-    name: sample.title || '冰之城墙',
-    site: sample.site || 'anibt.net',
-    year: String(now.getFullYear()),
-    month: String(now.getMonth() + 1).padStart(2, '0'),
-    day: String(now.getDate()).padStart(2, '0'),
-    season: `${now.getFullYear()}${seasonName}`,
-    animeSeason: `Season ${sample.season || 1}`,
-    animeSeasonCN: `第${sample.season || 1}季`,
-    quarter: seasonName,
-    seasonNumber: String(sample.season || 1),
-    tmdbid: sample.tmdbID || '283428',
-  };
-  values.titleYearTmdb = `${values.title} (${values.year}) {tmdb-${values.tmdbid}}`;
-  return String(template || '').replace(/\$\{(\w+)\}/g, (match, key) => values[key] !== undefined ? values[key] : match).replace(/^\/+|\/+$/g, '');
-}
 
-function openFinalPathHelp() {
-  const rows = [
-    ['${title}', '订阅标题', '冰之城墙'],
-    ['${titleYearTmdb}', '标题 + 年份 + TMDB ID', '冰之城墙 (2026) {tmdb-283428}'],
-    ['${tmdbid}', 'TMDB ID', '283428'],
-    ['${animeSeason}', '番剧季数（英文）', 'Season 2'],
-    ['${animeSeasonCN}', '番剧季数（中文）', '第2季'],
-    ['${quarter}', '番剧首播季度', '秋'],
-    ['${seasonNumber}', '番剧季数数字', '2'],
-    ['${site}', 'RSS 站点域名', 'anibt.net'],
-    ['${year}', '番剧首播年份', '2026'],
-    ['${season}', '番剧首播年份 + 季度', '2026秋'],
-    ['${month}', '番剧首播月份', '10'],
-    ['${day}', '番剧首播日期', '23'],
-  ];
-  openModal({
-    title: '保存文件夹 2 子路径变量',
-    subtitle: '保存文件夹 2 子路径支持以下变量',
-    size: 'narrow',
-    body: `<div class="path-help-list">${rows.map(([key, desc, example]) => `<div class="path-help-row"><code>${esc(key)}</code><span>${esc(desc)}</span><em>${esc(example)}</em></div>`).join('')}</div>`,
-    footer: `<div class="hint">路径会自动清理 115 不允许的字符；子文件夹会自动创建。</div><span class="spacer"></span><button class="btn" data-action="modal-close">关闭</button>`,
+function loadAssetScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-lazy-module="' + src + '"]');
+    if (existing) { existing.addEventListener('load', resolve, { once: true }); existing.addEventListener('error', reject, { once: true }); return; }
+    const script = document.createElement('script');
+    script.src = src;
+    script.dataset.lazyModule = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('加载模块失败: ' + src));
+    document.body.appendChild(script);
   });
 }
 
-function renderSettingsPage() {
-  state.settingsTab = 'form';
-  const cfg = state.config;
-  const configuredEvents = ((cfg.notify || {}).events || []);
-  const notifyEvents = configuredEvents.length ? configuredEvents : DEFAULT_NOTIFY_EVENTS;
-  const renameHasSubgroup = String((cfg.rename || {}).template || '').includes('${subgroup}');
-  if (!state.labWashFolders) {
-    state.labWashFolders = (((cfg.lab || {}).wash_folders) || []).map(cid => ({ cid, name: '' }));
-  }
-  if (!state.labPreferred) {
-    const presets = ['桜都字幕组', '北宇治字幕组', 'TSDM字幕组', 'LoliHouse', '拨雪寻春', 'ToonsHub'];
-    const preferred = ((cfg.lab || {}).preferred_subgroups || []).map(item => String(item).trim()).filter(Boolean);
-    const inactive = ((cfg.lab || {}).inactive_subgroups || []).map(item => String(item).trim()).filter(Boolean);
-    state.labPreferred = [...preferred];
-    state.labInactive = [...new Set([...inactive, ...presets.filter(item => !preferred.includes(item) && !inactive.includes(item))])];
-  }
-  const meta = state.meta || {};
-  const loginState = state.status ? state.status.login_state : 'unknown';
-  const loginStateText = ({ ok: '已登录', checking: '检测中', unknown: '检测中', nocookies: '未配置', error: '登录失效' })[loginState] || loginState;
-
-  const accountUser = state.status && state.status.user;
-  const accountName = accountUser && accountUser.name ? accountUser.name : (loginState === 'ok' ? '115 已登录' : '未登录 115');
-  const accountAvatar = accountUser && accountUser.name ? esc(accountUser.name.slice(0, 1).toUpperCase()) : icon('cloud');
-  const accountUid = accountUser && accountUser.id ? accountUser.id : '—';
-  const loginHint = loginState === 'ok'
-    ? `<span class="badge badge-success">已登录${state.status.user && state.status.user.name ? ' · ' + esc(state.status.user.name) : ''}</span>`
-    : loginState === 'checking' || loginState === 'unknown'
-      ? `<span class="badge badge-warning">检测中</span>`
-      : loginState === 'nocookies'
-        ? `<span class="badge">未配置</span>`
-        : `<span class="badge badge-danger">登录失效</span>`;
-
-  const legacyBanner = meta.legacy_imported
-    ? `<div class="banner warn">${icon('alert')}<span>已合并旧版 rss.json / .cookies / node-site-config.json。保存配置后会写入 <code>${esc(meta.path)}</code>，旧文件保留不删除。</span></div>` : '';
-  const restartHint = `<div class="notice">${icon('info')}<span>监听地址与端口在服务重启后生效；其余配置保存后立即热重载。</span></div>`;
-
-  const formTab = `
-    <div class="settings-stack">
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('cloud')}</span><div><h3>115 账号</h3><p>当前登录账号与连接状态</p></div><span style="margin-left:auto">${loginHint}</span></div>
-        <div class="section-body">
-          <div class="settings-account">
-            <div class="settings-account-avatar">${accountAvatar}</div>
-            <div class="settings-account-info">
-              <span>115 CLOUD DRIVE</span>
-              <h3>${esc(accountName)}${accountUser && accountUser.is_vip ? '<span class="hero-badge">VIP</span>' : ''}</h3>
-              <p>UID ${esc(String(accountUid))}</p>
-            </div>
-          </div>
-          <details class="advanced-settings">
-            <summary>账号操作与 Cookies</summary>
-            <div class="settings-account-actions">
-              <button class="btn btn-soft" id="qr-login">${icon('qr')}扫码登录</button>
-              <button class="btn btn-danger" id="logout-btn">${icon('logout')}退出 115 登录</button>
-            </div>
-            <label class="field">
-              <span>115 Cookies</span>
-              <input class="input mono" id="set-cookies" type="password" autocomplete="off" value="${esc(cfg.auth.cookies || '')}" placeholder="UID=...; CID=...; SEID=...; KID=...">
-              <span class="hint">只显示一行，内容以 * 隐藏；留空并保存会清除登录状态。</span>
-            </label>
-          </details>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('server')}</span><div><h3>服务与访问</h3><p>Web UI 监听地址、登录保护与代理</p></div></div>
-        <div class="section-body">
-          <details class="advanced-settings">
-            <summary>高级设置</summary>
-            <div class="form-grid">
-              <label class="field"><span>监听地址</span><input class="input" id="set-host" value="${esc(cfg.server.host)}" placeholder="0.0.0.0"><span class="hint">0.0.0.0 表示监听所有网卡，127.0.0.1 仅本机。</span></label>
-              <label class="field"><span>端口</span><input class="input" id="set-port" type="number" min="1" max="65535" value="${cfg.server.port}"></label>
-              <label class="field span-2"><span>访问令牌（可选）</span><input class="input mono" id="set-token" value="${esc(cfg.server.access_token || '')}" placeholder="留空表示不启用"><span class="hint">设置后所有 API 请求都需要 <code>X-Access-Token</code>。UI 会自动记住当前令牌。</span></label>
-              <label class="field span-2"><span>Web UI 登录保护</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-auth-enabled" ${cfg.server.auth_enabled ? 'checked' : ''}><span></span></span><span>启用后打开 Web UI 需要账号和密码</span></span></label>
-              <label class="field"><span>登录账号</span><input class="input" id="set-auth-username" value="${esc(cfg.server.auth_username || '')}" placeholder="例如 admin" autocomplete="username"></label>
-              <label class="field"><span>登录密码</span><input class="input" id="set-auth-password" type="password" placeholder="${cfg.server.auth_enabled ? '留空表示不修改' : '默认 admin'}" autocomplete="new-password"><span class="hint">默认账号和密码都是 admin；修改后下次打开页面需要重新登录。</span></label>
-              <label class="field span-2"><span>网络代理</span><input class="input mono" id="set-proxy" value="${esc(cfg.proxy.http)}" placeholder="http://127.0.0.1:10809"><span class="hint">启用站点代理时使用的 HTTP 代理地址。</span></label>
-              <div class="field span-2"><button class="btn btn-sm" type="button" id="auth-logout">${icon('logout')}退出当前 Web UI 登录</button></div>
-            </div>
-            ${restartHint}
-          </details>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('info')}</span><div><h3>AI 助手</h3><p>DeepSeek 兼容 API，用于查询和受控操作</p></div><span style="margin-left:auto" class="badge ${(cfg.ai || {}).enabled ? 'badge-success' : ''}">${(cfg.ai || {}).enabled ? '已开启' : '未开启'}</span></div>
-        <div class="section-body">
-          <label class="field"><span>启用 AI 助手</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-ai-enabled" ${(cfg.ai || {}).enabled ? 'checked' : ''}><span></span></span><span>启用后可在「AI 助手」页面查询；修改/删除操作需要二次确认</span></span></label>
-          <div class="form-grid">
-            <label class="field"><span>模板</span><select class="select" id="set-ai-provider"><option value="deepseek" selected>DeepSeek</option></select><span class="hint">当前支持 DeepSeek 兼容 Chat Completions API。</span></label>
-            <label class="field"><span>权限</span><select class="select" id="set-ai-permission"><option value="readonly" ${(cfg.ai || {}).permission !== 'full' ? 'selected' : ''}>部分权限（只读）</option><option value="full" ${(cfg.ai || {}).permission === 'full' ? 'selected' : ''}>完整权限（操作需二次确认）</option></select></label>
-            <label class="field span-2"><span>API 地址</span><input class="input mono" id="set-ai-base" value="${esc((cfg.ai || {}).base_url || 'https://api.deepseek.com')}" placeholder="https://api.deepseek.com"></label>
-            <label class="field"><span>模型</span><input class="input mono" id="set-ai-model" value="${esc((cfg.ai || {}).model || 'deepseek-chat')}" placeholder="deepseek-chat"></label>
-            <label class="field"><span>API Key</span><input class="input" id="set-ai-key" type="password" value="${esc((cfg.ai || {}).api_key || '')}" placeholder="sk-..."></label>
-          </div>
-          <div class="notice">${icon('info')}<span>AI 不会直接删除或修改订阅；完整权限下也必须经过页面二次确认。</span></div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('database')}</span><div><h3>数据库与缓存</h3><p>SQLite 历史库与 115 请求节流参数</p></div></div>
-        <div class="section-body">
-          <div class="form-grid">
-            <label class="field span-2"><span>数据库路径</span><input class="input mono" id="set-db" value="${esc(cfg.database.path)}"><span class="hint">相对路径基于 config.toml 所在目录解析。</span></label>
-            <label class="field span-2"><span>115 同步目录</span><div class="field-row"><input class="input mono" value="${esc(meta.database_path || '')}" readonly><span class="badge">解析后</span></div></label>
-          </div>
-          <label class="check"><span class="switch"><input type="checkbox" id="set-disable-cache" ${cfg.p115.disable_cache ? 'checked' : ''}><span></span></span>禁用历史去重（disable_cache），每次运行都会重新提交所有匹配条目</label>
-          <div class="form-grid">
-            <label class="field"><span>分块延迟（秒）</span><input class="input" id="set-chunk-delay" type="number" min="0" value="${cfg.p115.chunk_delay}"></label>
-            <label class="field"><span>分块大小</span><input class="input" id="set-chunk-size" type="number" min="1" value="${cfg.p115.chunk_size}"></label>
-            <label class="field"><span>冷却最小（毫秒）</span><input class="input" id="set-cooldown-min" type="number" min="0" value="${cfg.p115.cooldown_min_ms}"></label>
-            <label class="field"><span>冷却最大（毫秒）</span><input class="input" id="set-cooldown-max" type="number" min="0" value="${cfg.p115.cooldown_max_ms}"></label>
-          </div>
-        </div>
-      </section>
-
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('download')}</span><div><h3>默认离线设置</h3><p>所有订阅未单独指定时使用的默认值</p></div></div>
-        <div class="section-body">
-          <div class="section-subtitle">存储位置</div>
-          <div class="form-grid">
-            <label class="field"><span>离线文件夹</span>
-              <div class="field-row"><input class="input" id="set-default-cid-name" readonly placeholder="使用 115 默认目录"><input type="hidden" id="set-default-cid" value="${esc((cfg.offline || {}).default_cid || '')}"><button class="btn btn-sm" type="button" id="set-default-cid-pick">${icon('folder')}选择</button></div>
-              <span class="hint" id="set-default-cid-path">115 离线任务先下载到此文件夹</span>
-            </label>
-            <label class="field" id="set-final-cid-field" ${(cfg.offline || {}).dual_folder ? '' : 'style="display:none"'}>
-              <span>保存文件夹 1</span>
-              <div class="field-row"><input class="input" id="set-final-cid-name" readonly placeholder="未设置保存文件夹"><input type="hidden" id="set-final-cid" value="${esc((cfg.offline || {}).final_cid || '')}"><button class="btn btn-sm" type="button" id="set-final-cid-pick">${icon('folder')}选择</button></div>
-              <span class="hint" id="set-final-cid-path">模式 1：所有视频移动到这个文件夹</span>
-            </label>
-            <label class="field" id="set-final-cid2-field" ${(cfg.offline || {}).dual_folder ? '' : 'style="display:none"'}>
-              <span>保存文件夹 2</span>
-              <div class="field-row"><input class="input" id="set-final-cid2-name" readonly placeholder="未设置保存文件夹 2"><input type="hidden" id="set-final-cid2" value="${esc((cfg.offline || {}).final_cid2 || '')}"><button class="btn btn-sm" type="button" id="set-final-cid2-pick">${icon('folder')}选择</button></div>
-              <span class="hint" id="set-final-cid2-path">保存文件夹 2 的根文件夹，下面按模板为每个番剧建子文件夹</span>
-            </label>
-            <label class="field span-2" id="set-final-path-field" ${(cfg.offline || {}).dual_folder ? '' : 'style="display:none"'}>
-              <span class="field-label">保存文件夹 2 子路径<button class="help-btn" type="button" id="final-path-help" title="查看所有变量">?</button></span>
-              <div class="field-row"><input class="input mono" id="set-final-path-template" value="${esc(((cfg.offline || {}).final_path_template || '\${month}/${titleYearTmdb}/${animeSeason}'))}" placeholder="${'${month}/${titleYearTmdb}/${animeSeason}'}"><button class="btn btn-sm" type="button" id="final-path-preview">${icon('eye')}预览路径</button></div>
-              <div class="path-preview" id="final-path-preview-output"></div>
-            </label>
-            <label class="field span-2"><span>全局排除规则</span><textarea class="textarea mono" id="set-global-exclude" rows="3" placeholder="720p&#10;/\\.5&#36;/">${esc(((cfg.offline || {}).global_exclude || []).join('\n'))}</textarea><span class="hint">每行一条，标题包含即跳过；支持 <code>/正则/</code>。对所有订阅生效。</span></label>
-          </div>
-          <div class="section-subtitle" style="margin-top:16px">任务行为</div>
-          <div class="form-grid">
-            <label class="field"><span>失败重试次数</span><input class="input" id="set-retry" type="number" min="0" max="100" value="${Number((cfg.offline || {}).retry || 0)}"><span class="hint">115 提交失败后重试的次数。</span></label>
-            <label class="field"><span>跳过 x.5 集</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-skip-x5" ${(cfg.offline || {}).skip_x5 ? 'checked' : ''}><span></span></span><span>跳过 12.5 这类集数</span></span></label>
-            <label class="field span-2"><span>运行后自动清理</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-auto-clear" ${(cfg.offline || {}).auto_clear_completed ? 'checked' : ''}><span></span></span><span>全部/自动运行结束后，清理 115 已完成离线任务（不删除文件）</span></span></label>
-            <label class="field span-2"><span>订阅完成后自动停用</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-auto-disable-completed" ${(cfg.offline || {}).auto_disable_completed ? 'checked' : ''}><span></span></span><span>达到总集数后自动标记完成并改为未启用</span></span></label>
-            <label class="field span-2"><span>离线后转移到保存文件夹</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-dual-folder" ${(cfg.offline || {}).dual_folder ? 'checked' : ''}><span></span></span><span>离线完成后（如启用重命名则先重命名）移动到默认保存文件夹</span></span></label>
-            <label class="field span-2"><span>保存文件夹只保留视频和字幕</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-keep-only-video" ${(cfg.offline || {}).keep_only_video ? 'checked' : ''}><span></span></span><span>离线后转移到保存文件夹下，只把视频和字幕移动到保存文件夹；字体/其他文件留在离线目录，字幕自动追加 .sc/.tc 等语言后缀</span></span></label>
-            <label class="field span-2"><span>同一 RSS 内每集只选一个版本</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-one-per-episode" ${(cfg.offline || {}).one_per_episode ? 'checked' : ''}><span></span></span><span>关闭时同一 RSS 内所有版本都会提交；开启后只提交评分最高的一个，不影响主 RSS 与备用 RSS 之间各自保留版本</span></span></label>
-          </div>
-          <div class="section-subtitle" style="margin-top:16px">自动规则</div>
-          <label class="field span-2"><span>使用自动规则</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-auto-rules" ${(cfg.offline || {}).auto_rules ? 'checked' : ''}><span></span></span><span>打开「规则与重命名」时，自动按下方优先级选择最佳规则（可再手动调整）</span></span></label>
-          <div class="section-subtitle" style="margin-top:16px">自动应用最佳规则优先顺序</div>
-          <div class="hint" style="margin-bottom:8px">从上到下依次尝试；当前 RSS 不存在的选项会自动跳过。</div>
-          <div id="priority-editor"></div>
-        </div>
-      </section>
-
-
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('download')}</span><div><h3>qBittorrent</h3><p>本地下载器：115 失败后的最后兜底</p></div><span style="margin-left:auto" class="badge ${(cfg.downloader || {}).qbittorrent && cfg.downloader.qbittorrent.enabled ? 'badge-success' : ''}">${(cfg.downloader || {}).qbittorrent && cfg.downloader.qbittorrent.enabled ? '已开启' : '未开启'}</span></div>
-        <div class="section-body">
-          <label class="field"><span>启用 qBittorrent</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-qb-enabled" ${(cfg.downloader || {}).qbittorrent && cfg.downloader.qbittorrent.enabled ? 'checked' : ''}><span></span></span><span>115 失败达到阈值后提交本地 qBittorrent</span></span></label>
-          <div class="form-grid">
-            <label class="field span-2"><span>WebUI 地址</span><input class="input mono" id="set-qb-url" value="${esc(((cfg.downloader || {}).qbittorrent || {}).url || '')}" placeholder="http://127.0.0.1:8080"></label>
-            <label class="field"><span>用户名</span><input class="input" id="set-qb-user" value="${esc(((cfg.downloader || {}).qbittorrent || {}).username || '')}" placeholder="admin"></label>
-            <label class="field"><span>密码</span><input class="input" id="set-qb-pass" type="password" value="${esc(((cfg.downloader || {}).qbittorrent || {}).password || '')}"></label>
-            <label class="field"><span>保存路径</span><input class="input mono" id="set-qb-save" value="${esc(((cfg.downloader || {}).qbittorrent || {}).save_path || '')}" placeholder="留空使用 qB 默认路径"></label>
-            <label class="field"><span>分类</span><input class="input" id="set-qb-category" value="${esc(((cfg.downloader || {}).qbittorrent || {}).category || '')}" placeholder="anifeed"></label>
-            <label class="field"><span>115 失败阈值</span><input class="input" id="set-qb-threshold" type="number" min="1" max="20" value="${Number(((cfg.downloader || {}).qbittorrent || {}).fallback_threshold || 3)}"><span class="hint">115 连续失败达到次数后触发 qBittorrent。</span></label>
-          </div>
-          <div class="field-row"><button class="btn btn-sm" id="qb-test" type="button">${icon('link')}测试连接</button><span class="hint">测试会登录 qBittorrent WebUI 并读取版本。</span></div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('edit')}</span><div><h3>重命名</h3><p>对 115 已完成的离线文件/文件夹按模板重命名</p></div><span style="margin-left:auto" class="badge ${(cfg.rename || {}).enabled ? 'badge-success' : ''}">${(cfg.rename || {}).enabled ? '已开启' : '未开启'}</span></div>
-        <div class="section-body">
-          <label class="field"><span>启用重命名</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-rename-enabled" ${(cfg.rename || {}).enabled ? 'checked' : ''}><span></span></span><span>离线完成后按模板重命名；解析不到集数时不会移动</span></span></label>
-          <div class="form-grid">
-            <label class="field span-2"><span class="label-help">重命名模板 <button class="help-dot" type="button" id="rename-vars-help" title="查看可用变量">?</button></span>
-              <div class="field-row"><input class="input mono" id="set-rename-template" value="${esc((cfg.rename || {}).template || '[${subgroup}] ${title} S${seasonFormat}E${episodeFormat}')}"><button class="btn btn-sm" type="button" id="rename-template-preview">${icon('eye')}预览</button></div>
-              <div class="path-preview" id="rename-template-output"></div>
-              <span class="hint">变量：<code>${'${title}'}</code> 订阅名、<code>${'${subgroup}'}</code> 字幕组、<code>${'${season}'}</code> / <code>${'${seasonFormat}'}</code>、<code>${'${episode}'}</code> / <code>${'${episodeFormat}'}</code>、<code>${'${resolution}'}</code>、<code>${'${tmdbid}'}</code>。</span>
-            </label>
-            <label class="field"><span>季数</span><input class="input" id="set-rename-season" type="number" min="0" max="1000" value="${Number((cfg.rename || {}).season || 1)}"></label>
-            <label class="field"><span>集数偏移</span><input class="input" id="set-rename-offset" type="number" min="-1000" max="1000" value="${Number((cfg.rename || {}).offset || 0)}"><span class="hint">例如标题从 00 开始、实际是第 01 集时填 1。</span></label>
-          </div>
-          <div class="field-row"><button class="btn btn-sm" id="postprocess-now">${icon('refresh')}立即处理已完成任务</button><span class="hint">后台每 20 秒自动处理；当前待处理：${state.status ? Number(state.status.postprocess_pending || 0) : 0}</span></div>
-          <div class="notice">${icon('info')}<span>重命名针对离线完成后的顶层文件或文件夹。离线后转移到保存文件夹下，启用重命名时只有重命名成功才会移动；未启用重命名则直接移动。解析不到集数时会保留在原目录。启用后「运行后自动清理」会暂停，避免任务被提前清理。</span></div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('link')}</span><div><h3>TMDB</h3><p>用于关联番剧和 ${'${tmdbid}'} 重命名字段</p></div></div>
-        <div class="section-body">
-          <div class="form-grid">
-            <label class="field"><span>TmdbApi</span><input class="input mono" id="set-tmdb-api" value="${esc((cfg.tmdb || {}).api || 'https://api.themoviedb.org')}" placeholder="https://api.themoviedb.org"></label>
-            <label class="field"><span>TmdbApiKey</span><input class="input mono" id="set-tmdb-api-key" value="${esc((cfg.tmdb || {}).api_key || '')}" placeholder="TMDB API Key"></label>
-            <label class="field"><span>TmdbImage</span><input class="input mono" id="set-tmdb-image" value="${esc((cfg.tmdb || {}).image || 'https://image.tmdb.org')}" placeholder="https://image.tmdb.org"></label>
-          </div>
-          <div class="notice">${icon('info')}<span>在订阅编辑中可搜索并关联 TMDB，重命名模板可使用 <code>${'${tmdbid}'}</code>。TMDB 需要有效的 API Key；图片地址用于搜索结果和 TMDB 海报。</span></div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('clock')}</span><div><h3>自动运行</h3><p>定时检查启用中的订阅并提交新条目</p></div><span style="margin-left:auto" class="badge ${(cfg.auto || {}).enabled ? 'badge-success' : ''}">${(cfg.auto || {}).enabled ? '已开启' : '未开启'}</span></div>
-        <div class="section-body">
-          <label class="field"><span>启用自动运行</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-auto-enabled" ${(cfg.auto || {}).enabled ? 'checked' : ''}><span></span></span><span>按间隔运行所有启用的订阅</span></span></label>
-          <div class="form-grid">
-            <label class="field"><span>自动订阅间隔（分钟）</span><input class="input" id="set-auto-interval" type="number" min="1" max="10080" value="${Number((cfg.auto || {}).interval_minutes || 30)}"><span class="hint">每隔多少分钟自动检查启用的订阅。</span></label>
-            <label class="field"><span>启动时立即运行</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-auto-run-on-start" ${(cfg.auto || {}).run_on_start ? 'checked' : ''}><span></span></span><span>服务启动后先跑一次</span></span></label>
-            <label class="field"><span>RSS 超时（秒）</span><input class="input" id="set-rss-timeout" type="number" min="1" max="300" value="${Number((cfg.subscription || {}).rss_timeout_seconds || 20)}"><span class="hint">抓取 RSS 的网络超时时间。</span></label>
-            <label class="field"><span>Mikan 站点地址</span><input class="input mono" id="set-mikan-host" value="${esc((cfg.subscription || {}).mikan_host || 'https://mikanani.me')}"><span class="hint">用于生成 Mikan RSS 地址，可改为镜像站。</span></label>
-          </div>
-          <div class="notice">${icon('info')}<span>自动运行只处理「启用」状态的订阅。115 未登录或已有运行中的作业时会自动跳过，并在日志中记录。</span></div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('bell')}</span><div><h3>通知</h3><p>运行结束后推送纯文本摘要，可包含新增条目标题</p></div></div>
-        <div class="section-body">
-          <div class="form-grid">
-            <label class="field"><span>通知方式</span><select class="select" id="set-notify-type">
-              <option value="auto" ${((cfg.notify || {}).type || 'auto') === 'auto' ? 'selected' : ''}>自动识别</option>
-              <option value="generic" ${((cfg.notify || {}).type) === 'generic' ? 'selected' : ''}>通用 Webhook</option>
-              <option value="wecom" ${((cfg.notify || {}).type) === 'wecom' ? 'selected' : ''}>企业微信机器人</option>
-            </select><span class="hint">自动识别企业微信机器人地址，否则按通用 JSON Webhook 发送。</span></label>
-            <label class="field"><span>Webhook 地址</span><input class="input mono" id="set-webhook" value="${esc((cfg.notify || {}).webhook || '')}" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..."></label>
-            <label class="field span-2"><span>推送内容</span><div class="ms" data-ms="content"><button type="button" class="ms-trigger" id="ms-content-trigger"><span class="ms-label" id="ms-content-label">选择内容</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10l5 5 5-5"/></svg></button><div class="ms-menu" id="ms-content-menu">
-              <label class="check-inline"><input type="checkbox" id="notify-content-summary" ${((cfg.notify || {}).content || ['summary','details','errors','time']).includes('summary') ? 'checked' : ''}>运行摘要</label>
-              <label class="check-inline"><input type="checkbox" id="notify-content-details" ${((cfg.notify || {}).content || ['summary','details','errors','time']).includes('details') ? 'checked' : ''}>订阅明细</label>
-              <label class="check-inline"><input type="checkbox" id="notify-content-errors" ${((cfg.notify || {}).content || ['summary','details','errors','time']).includes('errors') ? 'checked' : ''}>错误信息</label>
-              <label class="check-inline"><input type="checkbox" id="notify-content-time" ${((cfg.notify || {}).content || ['summary','details','errors','time']).includes('time') ? 'checked' : ''}>时间</label>
-            </div></div><span class="hint">通知以纯文本发送；企业微信使用 text 消息，通用 Webhook 使用 text/plain。</span></label>
-          </div>
-          <label class="field span-2"><span>推送事件</span><div class="ms" data-ms="events"><button type="button" class="ms-trigger" id="ms-events-trigger"><span class="ms-label" id="ms-events-label">选择事件</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10l5 5 5-5"/></svg></button><div class="ms-menu" id="ms-events-menu">
-            ${[['run','运行汇总'],['added','添加至云下载'],['completed','下载完成'],['failed','下载失败'],['idle','摸鱼提醒'],['hourly','整点更新'],['wash','洗版完成']].map(([key,label]) => `<label class="check-inline"><input type="checkbox" class="notify-event" data-event="${key}" ${notifyEvents.includes(key) ? 'checked' : ''}>${label}</label>`).join('')}
-          </div></div><span class="hint">单独控制每种事件是否推送；关闭后该事件不会发送。</span></label>
-          <div class="form-grid">
-            <label class="field span-2"><span>摸鱼提醒</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="notify-idle-enabled" ${(cfg.notify || {}).idle_enabled ? 'checked' : ''}><span></span></span><span>订阅超过指定天数没有更新时发送提醒</span></span></label>
-            <label class="field"><span>未更新天数</span><input class="input" id="notify-idle-days" type="number" min="1" max="3650" value="${Number((cfg.notify || {}).idle_days || 7)}"><span class="hint">每天最多提醒一次。</span></label>
-          </div>
-          <label class="field span-2"><span>通知模板</span><textarea class="textarea mono" id="set-notify-template" rows="13" spellcheck="false">${esc((cfg.notify || {}).template || DEFAULT_NOTIFY_TEMPLATE)}</textarea><span class="hint">变量：\${action} \${title} \${score} \${themoviedbName} \${bgmUrl} \${season} \${episode} \${subgroup} \${currentEpisodeNumber} \${totalEpisodeNumber} \${year} \${month} \${date} \${text} \${bgmEpisodeTitle}</span></label>
-          <div class="form-grid">
-            <label class="field span-2"><span>整点推送</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-notify-hourly" ${(cfg.notify || {}).hourly_enabled ? 'checked' : ''}><span></span></span><span>在指定整点发送整体更新情况；留空表示每小时</span></span></label>
-            <label class="field span-2"><span>推送整点（0-23）</span><input class="input" id="set-notify-hours" value="${esc(((cfg.notify || {}).hourly_hours || []).join(', '))}" placeholder="例如 0, 6, 12, 18；留空表示每小时"><span class="hint">多个小时用逗号分隔，按服务器本地时间。</span></label>
-            <label class="field span-2"><span>无更新时静默</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-notify-skip-no-change" ${(cfg.notify || {}).skip_no_change ? 'checked' : ''}><span></span></span><span>本次没有新增条目且没有错误时，不发送运行汇总通知</span></span></label>
-            <label class="field"><span>下载超时</span><input class="input" id="set-notify-timeout" type="number" min="1" max="10080" value="${Number((cfg.notify || {}).download_timeout_minutes || 180)}"><span class="hint">超过该分钟数仍未离线完成时发送失败通知。</span></label>
-            <label class="field"><span>成功时通知</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-notify-success" ${(cfg.notify || {}).on_success ? 'checked' : ''}><span></span></span><span>提交完成后推送</span></span></label>
-            <label class="field"><span>失败时通知</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-notify-error" ${(cfg.notify || {}).on_error ? 'checked' : ''}><span></span></span><span>出现错误时推送</span></span></label>
-          </div>
-          <div class="field-row">
-            <button class="btn btn-sm" id="notify-test">${icon('bell')}发送测试通知</button>
-            <span class="hint">使用已保存的配置发送，修改后请先保存。</span>
-          </div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('info')}</span><div><h3>关于</h3><p>AniFeed 项目信息</p></div></div>
-        <div class="section-body">
-          <div class="about-head"><span class="brand-mark"><img src="/logo.png" alt="AniFeed"></span><div><h2>AniFeed</h2><p>RSS → 115 离线 · 自托管动漫下载管理</p></div></div>
-          <div class="kv">
-            <div class="kv-row"><span>版本</span><code>v${esc(state.status ? state.status.version : '0.02')}</code></div>
-            <div class="kv-row"><span>GitHub</span><a href="https://github.com/huohen92/anifeed" target="_blank" rel="noopener noreferrer">github.com/huohen92/anifeed</a></div>
-            <div class="kv-row"><span>许可</span><code>MIT</code></div>
-          </div>
-          <div class="notice" style="margin-top:14px">${icon('info')}<span>115 为主下载器；qBittorrent 为本地兜底下载器。</span></div>
-        </div>
-      </section>
-
-
-
-
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('beaker')}</span><div><h3>多字幕组</h3><p>实验功能：允许同一番剧保留多个字幕组</p></div></div>
-        <div class="section-body">
-          <label class="field span-2"><span>启用备用 RSS 字幕组</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-multi-subgroup" ${(cfg.lab || {}).multi_subgroup ? 'checked' : ''}><span></span></span><span>启用后可在订阅中维护主 RSS 和多个备用 RSS 字幕组</span></span></label>
-          <label class="field span-2"><span>多 RSS 字幕组共存</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-multi-rss" ${(cfg.lab || {}).multi_rss_coexist ? 'checked' : ''}><span></span></span><span>开启后主 RSS 和备用 RSS 都下载，不做跨 RSS 集数覆盖</span></span></label>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('heart')}</span><div><h3>喜好字幕组</h3><p>用于洗版保留顺序和自动备用字幕组</p></div></div>
-        <div class="section-body">
-          <div class="field span-2"><span>字幕组优先级</span>
-            <div id="lab-subgroup-priority" class="subgroup-priority"></div>
-            <div class="field-row subgroup-add-row"><input class="input" id="lab-subgroup-add" placeholder="手动添加字幕组名称"><button class="btn btn-sm" type="button" id="lab-subgroup-add-btn">${icon('plus')}添加</button></div>
-            <span class="hint">左侧从上到下优先；用于洗版保留和自动备用字幕组。可把字幕组移到右侧不启用。</span>
-            <div class="notice" style="margin-top:8px">${icon('info')}<span>喜好字幕组依赖重命名后的标题包含字幕组名称。请确保重命名模板包含 <code>\${subgroup}</code>，否则洗版和自动备用无法识别字幕组。</span></div>
-            ${renameHasSubgroup ? '' : `<div class="notice" style="margin-top:8px">${icon('alert')}<span>当前重命名模板不包含 <code>\${subgroup}</code>，喜好字幕组可能无法生效。</span></div>`}
-          </div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('trash')}</span><div><h3>洗版</h3><p>按下载记录清理多个文件夹中的重复剧集</p></div></div>
-        <div class="section-body">
-          <label class="field span-2"><span>启用洗版</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-wash" ${(cfg.lab || {}).wash_enabled ? 'checked' : ''}><span></span></span><span>优先保留喜好字幕组；都不在喜好列表时保留简体且体积更大的版本</span></span></label>
-          <label class="field"><span>洗版模式</span><select class="select" id="set-lab-wash-mode">
-            <option value="safe" ${((cfg.lab || {}).wash_mode || 'safe') === 'safe' ? 'selected' : ''}>安全模式：只处理有下载记录的文件</option>
-            <option value="full" ${((cfg.lab || {}).wash_mode || '') === 'full' ? 'selected' : ''}>完整模式：扫描文件夹内所有可识别剧集</option>
-          </select><span class="hint">安全模式不会碰没有下载记录的文件。</span></label>
-          <div class="form-grid">
-            <label class="field"><span>定时洗版</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-wash-schedule" ${(cfg.lab || {}).wash_schedule_enabled ? 'checked' : ''}><span></span></span><span>按间隔自动执行洗版</span></span></label>
-            <label class="field"><span>间隔（分钟）</span><input class="input" id="set-lab-wash-interval" type="number" min="1" max="100000" value="${Number((cfg.lab || {}).wash_interval_minutes || 1440)}"><span class="hint">默认 1440 分钟，即每天一次。</span></label>
-          </div>
-          <div class="field span-2"><span>洗版文件夹</span><div class="lab-folder-list" id="lab-wash-folders"></div><div class="field-row" style="margin-top:8px"><button class="btn btn-sm" type="button" id="lab-add-wash-folder">${icon('plus')}添加文件夹</button><button class="btn btn-sm btn-danger" type="button" id="lab-wash-now">${icon('trash')}立即洗版</button><span class="hint">先扫描预览，再确认删除；会发送逐文件删除通知。</span></div></div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('refresh')}</span><div><h3>自动备用字幕组</h3><p>主 RSS 连续添加失败后自动补充字幕组</p></div><button class="help-dot" type="button" id="auto-backup-logic-help" title="查看完整逻辑" style="margin-left:auto">?</button></div>
-        <div class="section-body">
-          <label class="field span-2"><span>自动添加备用字幕组</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-backup" ${(cfg.lab || {}).auto_backup_subgroup ? 'checked' : ''}><span></span></span><span>主 RSS 连续多次添加失败后，自动补充有缺失集数的备用字幕组 RSS</span></span></label>
-          <label class="field"><span>主 RSS 连续添加失败次数</span><input class="input" id="set-lab-auto-backup-failures" type="number" min="1" max="20" value="${Number((cfg.lab || {}).auto_backup_failures || 2)}"><span class="hint">主 RSS 连续添加失败达到该次数后触发检查。</span></label>
-          <label class="field span-2"><span>跳过使用集数偏移的番剧</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-backup-skip-offset" ${(cfg.lab || {}).auto_backup_skip_offset ? 'checked' : ''}><span></span></span><span>主 RSS 已设置集数偏移时不自动添加备用 RSS；备用 RSS 本身按 TMDB 顺序，不需要继承偏移</span></span></label>
-          <label class="field span-2"><span>自动校正备用 RSS 偏移</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-offset" ${(cfg.lab || {}).auto_offset ? 'checked' : ''}><span></span></span><span>用 TMDB 分集 + 发布日期匹配，自动计算备用 RSS 的季数和偏移</span></span></label>
-          <div class="field span-2"><div class="notice">${icon('info')}<span>优先级：先执行「跳过使用集数偏移的番剧」；跳过命中后不会自动添加备用 RSS，也不会计算偏移。未跳过时才由「自动校正备用 RSS 偏移」计算季数和偏移。</span></div></div>
-          <label class="field"><span>偏移匹配样本数</span><div class="field-row"><input class="input" id="set-lab-auto-offset-samples" type="number" min="1" max="20" value="${Number((cfg.lab || {}).auto_offset_samples || 3)}"><button class="help-dot" type="button" id="auto-offset-samples-help" title="查看说明">?</button></div></label>
-          <label class="field span-2"><span>自动应用规则</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-auto-apply" ${(cfg.lab || {}).auto_apply_rules ? 'checked' : ''}><span></span></span><span>自动添加的备用字幕组使用自动应用最佳规则</span></span></label>
-          <label class="field span-2"><span>显示表单提示</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-lab-hide-hints" ${!(cfg.lab || {}).hide_hints ? 'checked' : ''}><span></span></span><span>关闭后隐藏字段说明文字与 ? / ! 帮助入口（给熟练用户的清爽模式）</span></span></label>
-          <div class="notice">${icon('info')}<span>以上为实验性选项，先保存配置；完整执行逻辑会在后续版本接入。</span></div>
-        </div>
-      </section>
-      <section class="card">
-        <div class="section-title"><span class="ico">${icon('image')}</span><div><h3>个性化</h3><p>背景、玻璃效果、强调色与导航配色</p></div></div>
-        <div class="section-body">
-          <div class="notice">${icon('info')}<span>视觉效果保存在本机浏览器；背景图片上传到服务器，可分别管理电脑端和移动端，修改即时生效。</span></div>
-          <div class="af-blocks">
-          <div class="af-block">
-            <div class="af-block-title">背景图片 <small>上传到服务器；电脑端和移动端分别管理</small></div>
-            <div class="af-device-tabs" id="af-bg-device">
-              <button type="button" data-device="desktop">电脑端</button>
-              <button type="button" data-device="mobile">移动端</button>
-            </div>
-            <div class="af-row">
-              <input class="input" id="af-bg-url" placeholder="https://example.com/bg.jpg 或 API 地址">
-              <button class="btn btn-sm" id="af-bg-apply" type="button">应用</button>
-              <button class="btn btn-sm" id="af-bg-upload" type="button">${icon('upload')}批量上传</button>
-              <button class="btn btn-sm btn-danger" id="af-bg-clear" type="button">清除选择</button>
-              <input type="file" id="af-bg-file" accept="image/*" multiple hidden>
-            </div>
-            <div class="af-row af-bg-mode-row">
-              <select class="select" id="af-bg-mode"><option value="single">显示指定图片</option><option value="random">随机显示已上传图片</option><option value="none">不显示背景</option></select>
-              <span class="af-hint" id="af-bg-count">0 张图片</span>
-            </div>
-            <div class="af-bg-gallery" id="af-bg-gallery"></div>
-            <div class="af-bg-preview" id="af-bg-preview">未设置背景</div>
-            <div class="af-hint">图片保存在服务器；电脑端和移动端可使用不同背景。建议单张不超过 10MB。</div>
-          </div>
-          <div class="af-block">
-            <div class="af-block-title">玻璃效果 <small>设置背景图后自动启用</small></div>
-            <div class="af-grid">
-              <label class="field"><span>背景模糊 <span class="af-slider-value" id="af-blur-val">14px</span></span><input class="af-slider" id="af-blur" type="range" min="0" max="30" step="1"></label>
-              <label class="field"><span>面板不透明度 <span class="af-slider-value" id="af-alpha-val">72%</span></span><input class="af-slider" id="af-alpha" type="range" min="35" max="100" step="1"></label>
-            </div>
-          </div>
-          <div class="af-block">
-            <div class="af-block-title">圆角与悬浮 <small>卡片、按钮、输入框统一生效</small></div>
-            <div class="af-grid">
-              <label class="field"><span>圆角 <span class="af-slider-value" id="af-radius-val">16px</span></span><input class="af-slider" id="af-radius" type="range" min="4" max="28" step="1"></label>
-              <label class="field"><span>悬浮阴影 <span class="af-slider-value" id="af-elev-val">45%</span></span><input class="af-slider" id="af-elev" type="range" min="0" max="100" step="1"></label>
-            </div>
-          </div>
-          <div class="af-block">
-            <div class="af-block-title">导航配色 <small>侧边栏底色，和内容区区分开</small></div>
-            <div class="af-swatches" id="af-nav"></div>
-          </div>
-          <div class="af-block">
-            <div class="af-block-title">强调色 <small>链接、激活图标与重点标记</small></div>
-            <div class="af-swatches" id="af-accent"></div>
-          </div>
-          <div class="af-block">
-            <div class="af-block-title">主题模式</div>
-            <div class="af-seg" id="af-mode">
-              <button type="button" data-mode="light">浅色</button>
-              <button type="button" data-mode="dark">深色</button>
-              <button type="button" data-mode="auto">跟随系统</button>
-            </div>
-          </div>
-          <div class="af-block">
-            <div class="af-block-title">导入 / 导出 <small>主题配置可带到其他设备</small></div>
-            <div class="af-row">
-              <button class="btn btn-sm" id="af-export-2" type="button">${icon('download')}导出主题</button>
-              <button class="btn btn-sm" id="af-import" type="button">${icon('upload')}导入 JSON</button>
-              <input type="file" id="af-import-file" accept="application/json,.json" hidden>
-              <button class="btn btn-sm btn-danger" id="af-reset" type="button">恢复默认</button>
-            </div>
-            <div class="af-hint" id="af-io-hint">「导出设计」导出的是主题 JSON（背景图、模糊、配色、导航色、明暗模式），与下方导入对应。</div>
-          </div>
-          </div>
-        </div>
-      </section>
-    </div>`;
-
-  const rawTab = `
-    <section class="card">
-      <div class="section-title"><span class="ico">${icon('file')}</span><div><h3>config.toml</h3><p>${esc(meta.path || '')}</p></div><button class="btn btn-sm" id="raw-reload" style="margin-left:auto">${icon('refresh')}重新读取</button></div>
-      <div class="section-body">
-        <div class="notice">${icon('info')}<span>原始编辑会保留注释，保存前会自动校验并备份为 <code>config.toml.bak</code>。</span></div>
-        <textarea class="textarea raw-editor" id="raw-editor" spellcheck="false" placeholder="正在加载…"></textarea>
-        <div class="field-row"><button class="btn btn-primary" id="raw-save">${icon('save')}保存 TOML</button><span class="hint" id="raw-path">${esc(meta.path || '')}</span></div>
-      </div>
-    </section>`;
-
-  state.settingsSection = state.settingsSection || 'connection';
-  $('#view').innerHTML = `
-    ${legacyBanner}
-    <div class="settings-grid">
-      <div>
-        ${state.settingsTab === 'form' ? `<div class="subtabs" id="settings-subtabs">
-          <button data-settings-section="connection">连接与账号</button>
-          <button data-settings-section="download">下载器</button>
-          <button data-settings-section="organize">整理与命名</button>
-          <button data-settings-section="subgroups">字幕组</button>
-          <button data-settings-section="notify">通知</button>
-          <button data-settings-section="personal">个性化</button>
-          <button data-settings-section="about">关于</button>
-        </div>
-        <div class="settings-section-intro" id="settings-section-intro"></div>` : ''}
-        <div id="settings-content">${state.settingsTab === 'form' ? formTab : rawTab}</div>
-        <div class="sticky-save" id="settings-savebar">
-          <span class="spacer"></span>
-          <button class="btn" id="settings-cancel">放弃修改</button>
-          <button class="btn btn-primary" id="settings-save-2">${icon('save')}保存配置</button>
-        </div>
-      </div>
-    </div>`;
-
-  initPriorityEditor(cfg);
-  initSettingsSections();
-  initMultiSelects();
-  enhanceSwitchRows();
-  initPersonalization();
-  hydrateFolderNames();
-  renderLabSubgroupPriority();
-  renderLabWashFolders();
-
-
-  const logoutButton = $('#auth-logout');
-  if (logoutButton) logoutButton.addEventListener('click', async () => {
-    try { await api('/api/session/logout', { method: 'POST' }); } catch { /* ignore */ }
-    location.reload();
-  });
-  const saveButtons = [$('#settings-save-2')].filter(Boolean);
-  saveButtons.forEach(btn => btn.addEventListener('click', saveSettings));
-  const reload = () => { state.dirty = false; loadSettingsPage(); };
-  $('#settings-cancel').addEventListener('click', reload);
-
-  if (state.settingsTab === 'form') {
-    $('#qr-login').addEventListener('click', openQrModal);
-    $('#logout-btn').addEventListener('click', logout);
-    $('#notify-test').addEventListener('click', testNotification);
-
-    $('#auto-backup-logic-help')?.addEventListener('click', () => openModal({
-      title: '自动备用 RSS 完整逻辑',
-        size: 'narrow',
-      subtitle: '从失败检测到 Season + Offset',
-      body: `<div class="kv">
-        <div class="kv-row"><span>1. 总开关</span><code>设置中的自动添加备用字幕组</code></div>
-        <div class="kv-row"><span>2. 单订阅</span><code>启用自动加入备用 RSS</code></div>
-        <div class="kv-row"><span>3. 触发</span><code>主 RSS 连续添加 115 失败</code></div>
-        <div class="kv-row"><span>4. 缺失集</span><code>对比历史记录寻找缺失集</code></div>
-        <div class="kv-row"><span>5. 字幕组</span><code>匹配喜好字幕组，且该组近期有缺失集</code></div>
-        <div class="kv-row"><span>6. 编号判断</span><code>按季编号 / 绝对编号；超出季长度时按绝对编号</code></div>
-        <div class="kv-row"><span>7. 季结构</span><code>AniList 季集数 + TMDB 季结构</code></div>
-        <div class="kv-row"><span>8. TMDB 对应季</span><code>直接确定季，Offset 0</code></div>
-        <div class="kv-row"><span>9. TMDB 单季</span><code>AniList 多季时按累计集数计算 Offset</code></div>
-        <div class="kv-row"><span>10. 后备</span><code>无法直接映射时按发布日期匹配 TMDB，优先 ANi 搬运组</code></div>
-        <div class="kv-row"><span>11. 校验</span><code>样本数达到设置值且一致性 ≥60%</code></div>
-        <div class="kv-row"><span>12. 写入</span><code>只写入新添加的备用 RSS，不修改主 RSS/已有备用 RSS</code></div>
-      </div><div class="hint" style="margin-top:10px">「跳过使用集数偏移的番剧」优先级最高；命中后不会添加备用 RSS，也不会执行偏移计算。</div>`,
-      footer: '<button class="btn btn-primary" data-action="modal-close">知道了</button>',
-    }));
-    $('#auto-offset-samples-help')?.addEventListener('click', () => openModal({
-      title: '偏移匹配样本数说明',
-        size: 'narrow',
-      subtitle: '不是下载次数，也不是重试次数',
-      body: `<div class="notice">${icon('info')}<span>样本数指：有多少条 RSS 条目成功匹配到 TMDB，并且计算出的「TMDB 季 + 偏移」完全一致。</span></div>
-        <div class="kv" style="margin-top:12px">
-          <div class="kv-row"><span>1 条条目</span><code>解析集数 + 发布日期 → 匹配一集 TMDB</code></div>
-          <div class="kv-row"><span>候选偏移</span><code>TMDB 集数 - RSS 集数</code></div>
-          <div class="kv-row"><span>样本</span><code>同一个「季 + 偏移」出现的条目数</code></div>
-        </div>
-        <div class="hint" style="margin-top:10px">示例：4 条 RSS 都得到 Season 1 / Offset +14，则样本数为 4；达到设置值且一致性 ≥60% 后，才会把 Season 和 Offset 写入新添加的备用 RSS。样本不足时仍会添加备用 RSS，但 Offset 保持 0。</div>`,
-      footer: '<button class="btn btn-primary" data-action="modal-close">知道了</button>',
-    }));
-    $('#qb-test')?.addEventListener('click', async () => {
-      const btn = $('#qb-test'); btn.disabled = true; btn.textContent = '连接中…';
-      try { const r = await api('/api/downloaders/qb/test', { method: 'POST', body: {} }); toast('qBittorrent 已连接：' + (r.version || 'OK'), 'success'); }
-      catch (e) { toast(e.message, 'error', 5000); }
-      finally { btn.disabled = false; btn.innerHTML = `${icon('link')}测试连接`; }
-    });
-    $('#set-default-cid-pick').addEventListener('click', () => {
-      openFolderPicker(({ cid, path }) => {
-        $('#set-default-cid').value = cid;
-        $('#set-default-cid-name').value = path.split('/').filter(Boolean).pop() || path;
-        $('#set-default-cid-path').textContent = path;
-        markDirty();
-      }, '选择默认离线目录');
-    });
-    const washNow = $('#lab-wash-now');
-    if (washNow) washNow.addEventListener('click', openWashPreview);
-    const addWashFolder = $('#lab-add-wash-folder');
-    if (addWashFolder) addWashFolder.addEventListener('click', () => {
-      openFolderPicker(({ cid, path }) => {
-        state.labWashFolders = state.labWashFolders || [];
-        if (!state.labWashFolders.some(item => item.cid === cid)) {
-          state.labWashFolders.push({ cid, name: path.split('/').filter(Boolean).pop() || path });
-          renderLabWashFolders();
-          markDirty();
-        }
-      }, '选择洗版文件夹');
-    });
-    $('#set-final-cid-pick').addEventListener('click', () => {
-      openFolderPicker(({ cid, path }) => {
-        $('#set-final-cid').value = cid;
-        $('#set-final-cid-name').value = path.split('/').filter(Boolean).pop() || path;
-        $('#set-final-cid-path').textContent = path;
-        markDirty();
-      }, '选择保存文件夹 1');
-    });
-    $('#set-final-cid2-pick').addEventListener('click', () => {
-      openFolderPicker(({ cid, path }) => {
-        $('#set-final-cid2').value = cid;
-        $('#set-final-cid2-name').value = path.split('/').filter(Boolean).pop() || path;
-        $('#set-final-cid2-path').textContent = path;
-        markDirty();
-      }, '选择保存文件夹 2');
-    });
-    const updateFinalCidField = () => {
-      const dual = $('#set-dual-folder').checked;
-      $('#set-final-cid-field').style.display = dual ? '' : 'none';
-      $('#set-final-cid2-field').style.display = dual ? '' : 'none';
-      $('#set-final-path-field').style.display = dual ? '' : 'none';
-    };
-    $('#set-dual-folder').addEventListener('change', () => {
-      updateFinalCidField();
-      markDirty();
-    });
-    updateFinalCidField();
-    const finalPathPreview = $('#final-path-preview');
-    if (finalPathPreview) finalPathPreview.addEventListener('click', () => {
-      const output = $('#final-path-preview-output');
-      const feed = (state.config.rss || [])[0] || {};
-      const template = $('#set-final-path-template').value.trim();
-      output.textContent = `示例：保存文件夹2/${expandFinalPathPreview(template, { title: feed.name, tmdbID: feed.tmdb_id, season: feed.rename_season })}/`;
-    });
-    const finalPathHelp = $('#final-path-help');
-    if (finalPathHelp) finalPathHelp.addEventListener('click', openFinalPathHelp);
-    const renamePreview = $('#rename-template-preview');
-    if (renamePreview) renamePreview.addEventListener('click', () => {
-      const feed = (state.config.rss || [])[0] || {};
-      const template = $('#set-rename-template').value.trim() || '[${subgroup}] ${title} S${seasonFormat}E${episodeFormat}';
-      const season = Number($('#set-rename-season').value || 1);
-      const episode = 3 + Number($('#set-rename-offset').value || 0);
-      const values = {
-        title: feed.name || '青之箱', name: feed.name || '青之箱',
-        subgroup: feed.subgroup_name || urlSubgroupName(feed.url) || 'LoliHouse',
-        season: String(season), seasonFormat: String(season).padStart(2, '0'),
-        episode: String(episode), episodeFormat: String(episode).padStart(2, '0'),
-        resolution: '1080p', tmdbid: feed.tmdb_id || '283428',
-        itemTitle: `[${feed.subgroup_name || urlSubgroupName(feed.url) || 'LoliHouse'}] ${feed.name || '青之箱'} - 03 [WebRip 1080p]`,
-      };
-      const output = template.replace(/\$\{(\w+)\}/g, (match, key) => values[key] !== undefined ? values[key] : match);
-      $('#rename-template-output').textContent = `示例：${output}`;
-    });
-    $('#rename-vars-help').addEventListener('click', openRenameVarsHelp);
-    $('#postprocess-now').addEventListener('click', async () => {
-      try {
-        await api('/api/postprocess/run', { method: 'POST', body: {} });
-        toast('已开始处理已完成任务', 'success');
-        setTimeout(loadStatus, 2500);
-      } catch (err) {
-        toast(err.message, 'error', 5200);
-      }
-    });
-    $('#settings-content').addEventListener('input', markDirty);
-    $('#settings-content').addEventListener('change', markDirty);
-  } else {
-    loadRawConfig();
-    $('#raw-reload').addEventListener('click', loadRawConfig);
-    $('#raw-save').addEventListener('click', saveRawConfig);
-    $('#raw-editor').addEventListener('input', markDirty);
-  }
+async function ensureSettingsModule() {
+  if (window.AniFeedSettings) return;
+  const app = document.querySelector('script[src*="app.min.js"]');
+  const query = app ? (new URL(app.src).search || '') : '';
+  await loadAssetScript('/app-settings.min.js' + query);
 }
 
-function markDirty() {
-  state.dirty = true;
-  const hint = $('#dirty-hint');
-  if (hint) {
-    hint.textContent = '有未保存的修改';
-    hint.style.color = 'var(--warning)';
-  }
-}
-
-function renderSitesEditor(focusLast = false) {
-  const container = $('#sites-editor');
-  if (!container) return;
-  if (!state.settingsSites) state.settingsSites = [];
-  if (!state.settingsSites.length) {
-    container.innerHTML = `<div class="empty" style="padding:26px"><p>还没有站点选项。点击右上角「添加站点」为特定域名启用代理或追加请求头。</p></div>`;
-    return;
-  }
-  container.innerHTML = state.settingsSites.map((site, index) => `
-    <div class="site-editor" data-site-index="${index}">
-      <div class="site-editor-head">
-        <input class="input" data-site-host value="${esc(site.host)}" placeholder="域名，例如 share.dmhy.org" style="flex:1">
-        <label class="check" style="white-space:nowrap"><span class="switch"><input type="checkbox" data-site-agent ${site.https_agent ? 'checked' : ''}><span></span></span>使用代理</label>
-        <button class="btn btn-sm btn-danger" data-site-remove title="移除站点">${icon('trash')}</button>
-      </div>
-      <div class="field" style="gap:7px">
-        <span class="hint">请求头</span>
-        <div data-header-list>${site.headers.map((h, hi) => headerRow(h, hi)).join('')}</div>
-        <button class="btn btn-sm btn-ghost" data-header-add style="align-self:flex-start">${icon('plus')}添加请求头</button>
-      </div>
-    </div>`).join('');
-
-  $$('[data-site-remove]', container).forEach((btn, i) => btn.addEventListener('click', () => {
-    state.settingsSites.splice(i, 1);
-    renderSitesEditor();
-    markDirty();
-  }));
-  $$('[data-header-add]', container).forEach((btn, i) => btn.addEventListener('click', () => {
-    state.settingsSites[i].headers.push({ key: '', value: '' });
-  cfg.lab = {
-    multi_subgroup: $('#set-lab-multi-subgroup').checked,
-    multi_rss_coexist: $('#set-lab-multi-rss').checked,
-    wash_enabled: $('#set-lab-wash').checked,
-    wash_mode: $('#set-lab-wash-mode').value,
-    wash_schedule_enabled: $('#set-lab-wash-schedule').checked,
-    wash_interval_minutes: Number($('#set-lab-wash-interval').value || 1440),
-    wash_folders: (state.labWashFolders || []).map(item => item.cid).filter(Boolean),
-    preferred_subgroups: [...(state.labPreferred || [])],
-    inactive_subgroups: [...(state.labInactive || [])],
-    auto_backup_subgroup: $('#set-lab-auto-backup').checked,
-    auto_backup_failures: Number($('#set-lab-auto-backup-failures').value || 2),
-    auto_backup_skip_offset: $('#set-lab-auto-backup-skip-offset').checked,
-    auto_offset: $('#set-lab-auto-offset').checked,
-    auto_offset_samples: Number($('#set-lab-auto-offset-samples').value || 3),
-    auto_apply_rules: $('#set-lab-auto-apply').checked,
-    hide_hints: !$('#set-lab-hide-hints').checked,
-  };
-  syncSitesFromDom();
-    renderSitesEditor();
-    markDirty();
-  }));
-  $$('[data-header-remove]', container).forEach(btn => btn.addEventListener('click', () => {
-    const siteEl = btn.closest('[data-site-index]');
-    const headerEl = btn.closest('[data-header-row]');
-    cfg.lab = {
-    multi_subgroup: $('#set-lab-multi-subgroup').checked,
-    multi_rss_coexist: $('#set-lab-multi-rss').checked,
-    wash_enabled: $('#set-lab-wash').checked,
-    wash_mode: $('#set-lab-wash-mode').value,
-    wash_schedule_enabled: $('#set-lab-wash-schedule').checked,
-    wash_interval_minutes: Number($('#set-lab-wash-interval').value || 1440),
-    wash_folders: (state.labWashFolders || []).map(item => item.cid).filter(Boolean),
-    preferred_subgroups: [...(state.labPreferred || [])],
-    inactive_subgroups: [...(state.labInactive || [])],
-    auto_backup_subgroup: $('#set-lab-auto-backup').checked,
-    auto_backup_failures: Number($('#set-lab-auto-backup-failures').value || 2),
-    auto_backup_skip_offset: $('#set-lab-auto-backup-skip-offset').checked,
-    auto_offset: $('#set-lab-auto-offset').checked,
-    auto_offset_samples: Number($('#set-lab-auto-offset-samples').value || 3),
-    auto_apply_rules: $('#set-lab-auto-apply').checked,
-    hide_hints: !$('#set-lab-hide-hints').checked,
-  };
-  syncSitesFromDom();
-    const index = Number(siteEl.dataset.siteIndex);
-    const hi = Number(headerEl.dataset.headerIndex);
-    state.settingsSites[index].headers.splice(hi, 1);
-    renderSitesEditor();
-    markDirty();
-  }));
-  if (focusLast) {
-    const inputs = $$('[data-site-host]', container);
-    if (inputs.length) inputs[inputs.length - 1].focus();
-  }
-}
-
-function headerRow(header, index) {
-  return `<div class="header-row" data-header-row data-header-index="${index}">
-    <input class="input" data-header-key value="${esc(header.key)}" placeholder="Header 名称">
-    <input class="input" data-header-value value="${esc(header.value)}" placeholder="值">
-    <button class="btn btn-sm btn-ghost btn-icon-only" data-header-remove title="删除">${icon('close')}</button>
-  </div>`;
-}
-
-function syncSitesFromDom() {
-  const container = $('#sites-editor');
-  if (!container) return;
-  state.settingsSites = $$('.site-editor', container).map(el => ({
-    host: el.querySelector('[data-site-host]').value.trim(),
-    https_agent: el.querySelector('[data-site-agent]').checked,
-    headers: $$('[data-header-row]', el).map(row => ({
-      key: row.querySelector('[data-header-key]').value.trim(),
-      value: row.querySelector('[data-header-value]').value,
-    })).filter(h => h.key),
-  }));
-}
-
-async function hydrateFolderNames() {
-  const entries = [
-    ['set-default-cid', 'set-default-cid-name', 'set-default-cid-path', '使用 115 默认目录'],
-    ['set-final-cid', 'set-final-cid-name', 'set-final-cid-path', '未设置保存文件夹'],
-    ['set-final-cid2', 'set-final-cid2-name', 'set-final-cid2-path', '未设置保存文件夹 2'],
-  ];
-  for (const [id, nameId, hintId, empty] of entries) {
-    const hidden = $('#' + id);
-    const name = $('#' + nameId);
-    if (!hidden || !name) continue;
-    const cid = hidden.value.trim();
-    if (!cid) { name.value = ''; name.placeholder = empty; continue; }
-    name.value = '读取中…';
-    try {
-      const data = await api(`/api/fs/stat?cid=${encodeURIComponent(cid)}`);
-      name.value = data.name || '已选择文件夹';
-      const hint = $('#' + hintId);
-      if (hint) hint.textContent = data.name || '已选择文件夹';
-    } catch {
-      name.value = '已选择文件夹';
-    }
-  }
-}
-
-
-function renderLabSubgroupPriority() {
-  const box = $('#lab-subgroup-priority');
-  if (!box) return;
-  const draw = () => {
-    const item = (name, side, index, total) => `<div class="priority-tag">
-      <span>${esc(name)}</span>
-      ${side === 'enabled' ? `<button type="button" data-move="up" data-index="${index}" ${index === 0 ? 'disabled' : ''} title="上移">↑</button><button type="button" data-move="down" data-index="${index}" ${index === total - 1 ? 'disabled' : ''} title="下移">↓</button><button type="button" data-move="inactive" data-index="${index}" title="移到不启用">→</button>` : `<button type="button" data-move="enable" data-index="${index}" title="启用">←</button>`}
-      <button type="button" data-move="remove" data-index="${index}" data-side="${side}" title="删除">×</button>
-    </div>`;
-    box.innerHTML = `<div class="subgroup-priority-columns">
-      <div class="subgroup-priority-column"><h5>启用 <span class="badge">${state.labPreferred.length}</span></h5><div class="priority-tags">${state.labPreferred.map((name, i) => item(name, 'enabled', i, state.labPreferred.length)).join('') || '<span class="hint">没有启用的字幕组</span>'}</div></div>
-      <div class="subgroup-priority-column"><h5>不启用 <span class="badge">${state.labInactive.length}</span></h5><div class="priority-tags">${state.labInactive.map((name, i) => item(name, 'inactive', i, state.labInactive.length)).join('') || '<span class="hint">没有不启用的字幕组</span>'}</div></div>
-    </div>`;
-    box.querySelectorAll('[data-move]').forEach(button => button.addEventListener('click', () => {
-      const side = button.closest('.subgroup-priority-column').querySelector('h5').textContent.startsWith('启用') ? 'enabled' : 'inactive';
-      const index = Number(button.dataset.index);
-      const move = button.dataset.move;
-      if (side === 'enabled') {
-        if (move === 'up' && index > 0) [state.labPreferred[index - 1], state.labPreferred[index]] = [state.labPreferred[index], state.labPreferred[index - 1]];
-        if (move === 'down' && index < state.labPreferred.length - 1) [state.labPreferred[index + 1], state.labPreferred[index]] = [state.labPreferred[index], state.labPreferred[index + 1]];
-        if (move === 'inactive') {
-          const [name] = state.labPreferred.splice(index, 1);
-          if (!state.labInactive.includes(name)) state.labInactive.push(name);
-        }
-        if (move === 'remove') state.labPreferred.splice(index, 1);
-      } else {
-        if (move === 'enable') {
-          const [name] = state.labInactive.splice(index, 1);
-          if (!state.labPreferred.includes(name)) state.labPreferred.push(name);
-        }
-        if (move === 'remove') state.labInactive.splice(index, 1);
-      }
-      draw();
-      markDirty();
-    }));
-  };
-  draw();
-  const add = () => {
-    const input = $('#lab-subgroup-add');
-    const name = (input.value || '').trim();
-    if (!name) return;
-    if (!state.labPreferred.includes(name)) state.labPreferred.push(name);
-    state.labInactive = state.labInactive.filter(item => item !== name);
-    input.value = '';
-    draw();
-    markDirty();
-  };
-  $('#lab-subgroup-add-btn')?.addEventListener('click', add);
-  $('#lab-subgroup-add')?.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); add(); } });
-}
-
-function renderLabWashFolders() {
-  const box = $('#lab-wash-folders');
-  if (!box) return;
-  if (!state.labWashFolders) state.labWashFolders = [];
-  box.innerHTML = state.labWashFolders.map((item, index) => `<span class="lab-folder-chip"><span>${esc(item.name || '已选择文件夹')}</span><button type="button" data-lab-folder-remove="${index}" title="移除">${icon('close')}</button></span>`).join('') || '<span class="hint">还没有添加洗版文件夹</span>';
-  box.querySelectorAll('[data-lab-folder-remove]').forEach(button => button.addEventListener('click', () => {
-    state.labWashFolders.splice(Number(button.dataset.labFolderRemove), 1);
-    renderLabWashFolders(); markDirty();
-  }));
-  for (const item of state.labWashFolders) {
-    if (!item.cid || item.name) continue;
-    api(`/api/fs/stat?cid=${encodeURIComponent(item.cid)}`).then(data => {
-      item.name = data.name || '';
-      renderLabWashFolders();
-    }).catch(() => { item.name = '文件夹名称读取失败'; renderLabWashFolders(); });
-  }
-}
-
-async function openWashPreview() {
-  if (state.dirty) {
-    toast('请先保存实验室配置，再执行洗版', 'error');
-    return;
-  }
-  try {
-    const mode = $('#set-lab-wash-mode').value || 'safe';
-    const data = await api('/api/lab/wash', { method: 'POST', body: { dry_run: true, mode } });
-    const groups = data.groups || [];
-    const rows = groups.map(group => `<div class="wash-group">
-      <div class="wash-group-title">${esc(group.series)} · 第 ${Number(group.season) || 1} 季 · 第 ${esc(String(group.episode))} 集</div>
-      <div class="wash-keep">保留：<code>${esc(group.keep.path)}</code></div>
-      ${(group.delete || []).map(file => `<div class="wash-delete"><span>删除：<code>${esc(file.path)}</code></span><span class="hint">${esc(file.reason || '')}</span></div>`).join('')}
-    </div>`).join('');
-    openModal({
-      title: '洗版预览',
-      subtitle: `${data.mode === 'full' ? '完整模式' : '安全模式'} · 扫描 ${data.scanned} 个文件 · 发现 ${groups.length} 组重复`,
-      size: 'rules',
-      body: `<div class="wash-preview">${groups.length ? rows : '<div class="empty" style="padding:26px"><span class="hint">没有发现需要删除的重复剧集。</span></div>'}</div>`,
-      footer: `<button class="btn" data-action="modal-close">取消</button><span class="spacer"></span><button class="btn btn-danger" id="wash-confirm" ${data.delete_count ? '' : 'disabled'}>${icon('trash')}确认删除 ${data.delete_count} 个文件</button>`,
-      onMount(el, close) {
-        el.querySelector('#wash-confirm')?.addEventListener('click', async event => {
-          const button = event.currentTarget;
-          setLoading(button, true, '删除中');
-          try {
-            const result = await api('/api/lab/wash', { method: 'POST', body: { dry_run: false, mode } });
-            close();
-            toast(`洗版完成：删除 ${result.deleted || 0} 个文件，失败 ${result.failed || 0} 个`, result.failed ? 'error' : 'success', 5200);
-          } catch (err) {
-            toast(err.message, 'error', 5200);
-            setLoading(button, false);
-          }
-        });
-      },
-    });
-  } catch (err) {
-    toast(err.message, 'error', 5200);
-  }
-}
-
-function collectSettings() {
-  const cfg = structuredClone(state.config);
-  cfg.auth.cookies = $('#set-cookies').value.trim();
-  if (!cfg.auth.cookies_file) cfg.auth.cookies_file = '.cookies';
-  cfg.server.host = $('#set-host').value.trim();
-  cfg.server.port = Number($('#set-port').value || 0);
-  cfg.server.access_token = $('#set-token').value.trim();
-  cfg.server.auth_enabled = $('#set-auth-enabled').checked;
-  cfg.server.auth_username = $('#set-auth-username').value.trim();
-  cfg.server.auth_password = $('#set-auth-password').value;
-  cfg.database.path = $('#set-db').value.trim();
-  cfg.p115.disable_cache = $('#set-disable-cache').checked;
-  cfg.p115.chunk_delay = Number($('#set-chunk-delay').value || 0);
-  cfg.p115.chunk_size = Number($('#set-chunk-size').value || 0);
-  cfg.p115.cooldown_min_ms = Number($('#set-cooldown-min').value || 0);
-  cfg.p115.cooldown_max_ms = Number($('#set-cooldown-max').value || 0);
-  cfg.proxy.http = $('#set-proxy').value.trim();
-  cfg.subscription = {
-    mikan_host: $('#set-mikan-host').value.trim(),
-    rss_timeout_seconds: Number($('#set-rss-timeout').value || 20),
-  };
-  cfg.downloader = {
-    primary_115: {
-      enabled: true,
-      offline_cid: $('#set-default-cid').value.trim(),
-      save_path: '',
-    },
-
-    qbittorrent: {
-      enabled: $('#set-qb-enabled').checked,
-      url: $('#set-qb-url').value.trim(),
-      username: $('#set-qb-user').value.trim(),
-      password: $('#set-qb-pass').value,
-      save_path: $('#set-qb-save').value.trim(),
-      category: $('#set-qb-category').value.trim(),
-      fallback_threshold: Number($('#set-qb-threshold').value || 3),
-    },
-  };
-  cfg.offline = {
-    default_cid: $('#set-default-cid').value.trim(),
-    default_savepath: '',
-    global_exclude: $('#set-global-exclude').value.split(/\r?\n/).map(line => line.trim()).filter(Boolean),
-    skip_x5: $('#set-skip-x5').checked,
-    retry: Number($('#set-retry').value || 0),
-    auto_clear_completed: $('#set-auto-clear').checked,
-    auto_disable_completed: $('#set-auto-disable-completed').checked,
-    one_per_episode: $('#set-one-per-episode').checked,
-    keep_only_video: $('#set-keep-only-video').checked,
-    auto_language: state.autoPriority ? state.autoPriority.language : PRIORITY_DEFAULTS.language,
-    auto_subtitle: state.autoPriority ? state.autoPriority.subtitle : PRIORITY_DEFAULTS.subtitle,
-    auto_container: state.autoPriority ? state.autoPriority.container : PRIORITY_DEFAULTS.container,
-    auto_resolution: state.autoPriority ? state.autoPriority.resolution : PRIORITY_DEFAULTS.resolution,
-    auto_rules: $('#set-auto-rules').checked,
-    dual_folder: $('#set-dual-folder').checked,
-    final_cid: $('#set-final-cid').value.trim(),
-    final_mode: 1,
-    final_cid2: $('#set-final-cid2').value.trim(),
-    final_path_template: $('#set-final-path-template').value.trim() || '${month}/${titleYearTmdb}/${animeSeason}',
-  };
-  cfg.rename = {
-    enabled: $('#set-rename-enabled').checked,
-    template: $('#set-rename-template').value.trim(),
-    season: Number($('#set-rename-season').value || 1),
-    offset: Number($('#set-rename-offset').value || 0),
-  };
-  cfg.tmdb = {
-    api: $('#set-tmdb-api').value.trim(),
-    api_key: $('#set-tmdb-api-key').value.trim(),
-    image: $('#set-tmdb-image').value.trim(),
-  };
-  cfg.auto = {
-    enabled: $('#set-auto-enabled').checked,
-    interval_minutes: Number($('#set-auto-interval').value || 30),
-    run_on_start: $('#set-auto-run-on-start').checked,
-  };
-  cfg.notify = {
-    type: $('#set-notify-type').value,
-    webhook: $('#set-webhook').value.trim(),
-    content: ['summary', 'details', 'errors', 'time'].filter(key => $(`#notify-content-${key}`).checked),
-    on_success: $('#set-notify-success').checked,
-    on_error: $('#set-notify-error').checked,
-    idle_enabled: $('#notify-idle-enabled').checked,
-    idle_days: Number($('#notify-idle-days').value || 7),
-    events: [...document.querySelectorAll('.notify-event')].filter(el => el.checked).map(el => el.dataset.event),
-    template: $('#set-notify-template').value,
-    download_timeout_minutes: Number($('#set-notify-timeout').value || 180),
-    skip_no_change: $('#set-notify-skip-no-change').checked,
-    hourly_enabled: $('#set-notify-hourly').checked,
-    hourly_hours: $('#set-notify-hours').value.split(/[,\s，]+/).map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 23),
-  };
-  cfg.ai = {
-    enabled: $('#set-ai-enabled').checked,
-    provider: $('#set-ai-provider').value,
-    base_url: $('#set-ai-base').value.trim(),
-    model: $('#set-ai-model').value.trim(),
-    api_key: $('#set-ai-key').value.trim(),
-    permission: $('#set-ai-permission').value,
-  };
-  cfg.lab = {
-    multi_subgroup: $('#set-lab-multi-subgroup').checked,
-    multi_rss_coexist: $('#set-lab-multi-rss').checked,
-    wash_enabled: $('#set-lab-wash').checked,
-    wash_mode: $('#set-lab-wash-mode').value,
-    wash_schedule_enabled: $('#set-lab-wash-schedule').checked,
-    wash_interval_minutes: Number($('#set-lab-wash-interval').value || 1440),
-    wash_folders: (state.labWashFolders || []).map(item => item.cid).filter(Boolean),
-    preferred_subgroups: [...(state.labPreferred || [])],
-    inactive_subgroups: [...(state.labInactive || [])],
-    auto_backup_subgroup: $('#set-lab-auto-backup').checked,
-    auto_backup_failures: Number($('#set-lab-auto-backup-failures').value || 2),
-    auto_backup_skip_offset: $('#set-lab-auto-backup-skip-offset').checked,
-    auto_offset: $('#set-lab-auto-offset').checked,
-    auto_offset_samples: Number($('#set-lab-auto-offset-samples').value || 3),
-    auto_apply_rules: $('#set-lab-auto-apply').checked,
-    hide_hints: !$('#set-lab-hide-hints').checked,
-  };
-  cfg.sites = (state.config && state.config.sites) || {};
-  return cfg;
-}
-
-async function testNotification(event) {
-  const button = event.currentTarget;
-  setLoading(button, true, '发送中');
-  try {
-    await api('/api/notify/test', { method: 'POST', body: {} });
-    toast('测试通知已发送', 'success');
-  } catch (err) {
-    toast(err.message, 'error', 5200);
-  } finally {
-    setLoading(button, false);
-  }
-}
-
-async function saveSettings(event) {
-  const btn = event ? event.currentTarget : null;
-  const cfg = collectSettings();
-  if (cfg.offline.dual_folder && !cfg.offline.final_cid) {
-    toast('启用离线后转移到保存文件夹时必须选择默认保存文件夹', 'error', 5200);
-    return;
-  }
-  if (cfg.rename.enabled && !cfg.rename.template) {
-    toast('启用重命名时必须填写重命名模板', 'error', 5200);
-    return;
-  }
-  if (!cfg.notify.content.length) {
-    toast('至少选择一项通知推送内容', 'error', 5200);
-    return;
-  }
-  setLoading(btn, true, '保存中');
-  try {
-    const resp = await api('/api/config', { method: 'PUT', body: { config: cfg } });
-    applyConfigState(resp.config, resp.meta);
-    state.dirty = false;
-    const newToken = (resp.config.server.access_token || '').trim();
-    if (newToken !== state.token) {
-      state.token = newToken;
-      if (newToken) localStorage.setItem('anifeed_token', newToken);
-      else localStorage.removeItem('anifeed_token');
-    }
-    toast('配置已保存并生效', 'success');
-    await loadStatus().catch(() => {});
-    renderSettingsPage();
-  } catch (err) {
-    toast(err.message, 'error', 6000);
-  } finally {
-    setLoading(btn, false);
-  }
-}
-
-async function logout() {
-  const ok = await confirmDialog({
-    title: '退出 115 登录',
-    message: '将清空本地 Cookies 文件并注销当前客户端。115 云端数据不受影响。',
-    confirmText: '退出登录',
-  });
-  if (!ok) return;
-  try {
-    await api('/api/auth/logout', { method: 'POST', body: {} });
-    toast('已退出登录', 'success');
-    state.config = null;
-    state.meta = null;
-    await loadStatus().catch(() => {});
-    loadSettingsPage();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-}
-
-async function loadRawConfig() {
-  const editor = $('#raw-editor');
-  if (!editor) return;
-  editor.value = '';
-  editor.placeholder = '正在加载 config.toml…';
-  try {
-    const data = await api('/api/config/raw');
-    editor.value = data.content || '';
-    editor.placeholder = '';
-    const path = $('#raw-path');
-    if (path) path.textContent = data.path || '';
-  } catch (err) {
-    editor.placeholder = `读取失败：${err.message}`;
-  }
-}
-
-async function saveRawConfig(event) {
-  const btn = event.currentTarget;
-  const content = $('#raw-editor').value;
-  setLoading(btn, true, '保存中');
-  try {
-    const resp = await api('/api/config/raw', { method: 'PUT', body: { content } });
-    applyConfigState(resp.config, resp.meta);
-    const newToken = (resp.config.server.access_token || '').trim();
-    if (newToken !== state.token) {
-      state.token = newToken;
-      if (newToken) localStorage.setItem('anifeed_token', newToken);
-      else localStorage.removeItem('anifeed_token');
-    }
-    state.dirty = false;
-    toast('config.toml 已保存并重载', 'success');
-    await loadStatus().catch(() => {});
-    renderSettingsPage();
-  } catch (err) {
-    toast(err.message, 'error', 6000);
-  } finally {
-    setLoading(btn, false);
-  }
+async function loadSettingsPage() {
+  await ensureSettingsModule();
+  return window.AniFeedSettings.loadPage();
 }
 
 function openQrModal() {
@@ -5493,10 +4541,17 @@ function hideTokenGate() {
 }
 
 async function startApp() {
-  await loadStatus();
+  await Promise.allSettled([loadStatus(), ensureConfig()]);
   hideTokenGate();
   renderRoute();
   syncAINav();
+  if (window.AniFeedTheme && window.AniFeedTheme.loadServerTheme) window.AniFeedTheme.loadServerTheme();
+  // Warm the rules/templates cache so the first "add subscription" can open
+  // the rules editor immediately instead of waiting on another API round-trip.
+  setTimeout(() => {
+    if (!state.rules) api('/api/rules').then(data => { state.rules = data; }).catch(err => console.debug('[AniFeed]', err));
+    if (!Array.isArray(state.matchTemplates)) loadMatchTemplates().catch(err => console.debug('[AniFeed]', err));
+  }, 350);
 }
 
 function showAuthGate(auth) {
@@ -5522,7 +4577,31 @@ function showAuthGate(auth) {
   setTimeout(() => $('#auth-user').focus(), 80);
 }
 
+function initTaskRowNavigation() {
+  document.addEventListener('click', event => {
+    const row = event.target.closest('.recent-table tbody tr, .task-table tbody tr');
+    if (!row || event.target.closest('button, a, input, select, textarea')) return;
+    if (state.route === 'history') return;
+    location.hash = '#/history';
+  });
+}
+
+async function initInputGuards() {
+  document.addEventListener('click', event => {
+    if (event.target.closest('input, button, select, textarea, a, .switch')) return;
+    const label = event.target.closest('label');
+    if (!label || !label.querySelector('.switch')) return;
+    event.preventDefault();
+  }, true);
+}
+
 async function boot() {
+  renderBootSkeleton();
+  window.addEventListener('unhandledrejection', event => {
+    console.error('[AniFeed] unhandled promise rejection', event.reason);
+  });
+  initInputGuards();
+  initTaskRowNavigation();
   initChrome();
   try {
     const auth = await api('/api/auth/status');
@@ -5545,7 +4624,8 @@ $('#auth-form').addEventListener('submit', async event => {
   if (state.authPending) return;
   state.authPending = true;
   const submitBtn = $('#auth-submit');
-  if (submitBtn) submitBtn.disabled = true;
+  const submitLabel = submitBtn ? submitBtn.textContent : '';
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '登录中…'; }
   try {
   const auth = await api('/api/auth/status').catch(() => ({}));
   const setup = !auth.configured;
@@ -5576,7 +4656,7 @@ $('#auth-form').addEventListener('submit', async event => {
   }
   } finally {
     state.authPending = false;
-    if (submitBtn) submitBtn.disabled = false;
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = submitLabel; }
   }
 });
 
@@ -5595,7 +4675,7 @@ $('#token-form').addEventListener('submit', async event => {
     toast('令牌验证通过', 'success');
   } catch (err) {
     state.token = '';
-    localStorage.removeItem('anifeed_token');
+    sessionStorage.removeItem('anifeed_token');
     error.textContent = err.message || '令牌错误';
     error.classList.remove('hidden');
   }
@@ -5615,6 +4695,18 @@ function initPersonalization() {
     el.textContent = msg || '';
     el.style.color = isErr ? 'var(--danger)' : 'var(--muted)';
   };
+  const saveAll = () => {
+    const t = T.read();
+    try {
+      T.save(t);
+      hint('个性化设置已保存');
+    } catch (e) {
+      hint('保存失败：' + (e && e.message ? e.message : '浏览器拒绝写入'), true);
+    }
+  };
+  const saveButton = $id('af-save');
+  if (saveButton) saveButton.onclick = saveAll;
+
   const save = patch => {
     try {
       T.save(Object.assign({}, T.read(), patch));
@@ -5685,6 +4777,13 @@ function initPersonalization() {
       blur.value = t.blur;
       $id('af-blur-val').textContent = t.blur + 'px';
       blur.oninput = () => { $id('af-blur-val').textContent = blur.value + 'px'; save({ blur: Number(blur.value) }); };
+    }
+    const bgBlur = $id('af-bg-blur');
+    if (bgBlur) {
+      const value = t.bgBlur === undefined ? 8 : Number(t.bgBlur);
+      bgBlur.value = value;
+      $id('af-bg-blur-val').textContent = value + 'px';
+      bgBlur.oninput = () => { $id('af-bg-blur-val').textContent = bgBlur.value + 'px'; save({ bgBlur: Number(bgBlur.value) }); };
     }
     const alpha = $id('af-alpha');
     if (alpha) {
@@ -5783,7 +4882,6 @@ function initPersonalization() {
     const images = serverImages();
     if (!images.length) return null;
     const cfg = serverDevice();
-    if (cfg.mode === 'random') return images[Math.floor(Math.random() * images.length)];
     return images.find(item => item.name === cfg.selected) || images[0];
   };
   const applyServer = () => {
@@ -5824,7 +4922,7 @@ function initPersonalization() {
       gallery.innerHTML = '<div class="af-bg-empty">还没有上传背景图片</div>';
     } else {
       const selected = cfg.mode === 'single' ? (cfg.selected || images[0].name) : '';
-      gallery.innerHTML = images.map(img => `<div class="af-bg-item ${img.name === selected ? 'active' : ''}"><img src="${img.url}" alt=""><div class="af-bg-item-actions"><button type="button" class="btn btn-sm ${img.name === selected ? 'btn-primary' : ''}" data-bg-pick="${img.name}">${img.name === selected ? '使用中' : '使用'}</button><button type="button" class="btn btn-sm btn-ghost" data-bg-remove="${img.name}" title="删除">×</button></div></div>`).join('');
+      gallery.innerHTML = images.map(img => `<div class="af-bg-item ${img.name === selected ? 'active' : ''}"><img src="${img.url}" alt=""><div class="af-bg-item-actions"><button type="button" class="btn btn-sm ${img.name === selected ? 'btn-primary' : ''}" data-bg-pick="${img.name}">${img.name === selected ? '使用中' : '使用'}</button>${img.builtin ? '<span class="af-bg-builtin">内置</span>' : `<button type="button" class="btn btn-sm btn-ghost" data-bg-remove="${img.name}" title="删除">×</button>`}</div></div>`).join('');
       gallery.onclick = async event => {
         const pick = event.target.closest('[data-bg-pick]');
         const del = event.target.closest('[data-bg-remove]');

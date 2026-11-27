@@ -43,6 +43,7 @@ type RssConfig struct {
 	UpdateWeekday   int           `json:"update_weekday,omitempty"`
 	TotalEpisodes   int           `json:"total_episodes,omitempty"`
 	Completed       bool          `json:"completed,omitempty"`
+	AutoDisable     bool          `json:"auto_disable,omitempty"`
 	FinalCid        string        `json:"final_cid,omitempty"`
 	FinalMode       int           `json:"final_mode,omitempty"`
 	FinalCustomMode int           `json:"final_custom_mode,omitempty"`
@@ -100,17 +101,26 @@ type Config struct {
 
 // DownloaderConfig describes one offline downloader.
 type DownloaderConfig struct {
-	Enabled           bool
-	OfflineCid        string
-	SavePath          string
-	OfflineParentID   string
-	FallbackThreshold int
-	DailyLimit        int
-	HighSpeedMB       int
-	URL               string
-	Username          string
-	Password          string
-	Category          string
+	Enabled                  bool
+	OfflineCid               string
+	SavePath                 string
+	OfflineParentID          string
+	FallbackThreshold        int
+	DailyLimit               int
+	HighSpeedMB              int
+	URL                      string
+	Username                 string
+	Password                 string
+	APIKey                   string
+	Category                 string
+	Tags                     string
+	ContentLayout            string
+	DownloadLimitKB          int
+	UploadLimitKB            int
+	RatioLimit               int
+	SeedingTimeLimit         int
+	InactiveSeedingTimeLimit int
+	UseDownloadPath          bool
 }
 
 // DownloadersConfig keeps the 115 primary and qBittorrent auxiliary downloaders.
@@ -242,8 +252,8 @@ func Resolve(cli CLIParams, toml *TOMLConfig, tomlPath string, legacy *LegacyCon
 	} else if toml != nil && toml.Auth.CookiesFile != "" {
 		// Read cookies from file specified in TOML
 		cookiesPath := ResolveCookiesFile(toml.Auth.CookiesFile, tomlPath)
-		if data, err := os.ReadFile(cookiesPath); err == nil {
-			cfg.Auth.Cookies = string(data)
+		if data, err := ReadCookiesFile(cookiesPath); err == nil {
+			cfg.Auth.Cookies = data
 		}
 	} else if legacy != nil {
 		cfg.Auth.Cookies = legacy.Cookies
@@ -373,18 +383,31 @@ func Resolve(cli CLIParams, toml *TOMLConfig, tomlPath string, legacy *LegacyCon
 		cfg.Offline.DefaultSavePath = cfg.Downloaders.Primary115.SavePath
 
 		cfg.Downloaders.QBittorrent = DownloaderConfig{
-			Enabled:           toml.Downloader.QBittorrent.Enabled,
-			URL:               toml.Downloader.QBittorrent.URL,
-			Username:          toml.Downloader.QBittorrent.Username,
-			Password:          toml.Downloader.QBittorrent.Password,
-			SavePath:          toml.Downloader.QBittorrent.SavePath,
-			Category:          toml.Downloader.QBittorrent.Category,
-			FallbackThreshold: toml.Downloader.QBittorrent.FallbackThreshold,
+			Enabled:                  toml.Downloader.QBittorrent.Enabled,
+			URL:                      toml.Downloader.QBittorrent.URL,
+			Username:                 toml.Downloader.QBittorrent.Username,
+			Password:                 toml.Downloader.QBittorrent.Password,
+			APIKey:                   toml.Downloader.QBittorrent.APIKey,
+			Tags:                     toml.Downloader.QBittorrent.Tags,
+			ContentLayout:            toml.Downloader.QBittorrent.ContentLayout,
+			DownloadLimitKB:          toml.Downloader.QBittorrent.DownloadLimitKB,
+			UploadLimitKB:            toml.Downloader.QBittorrent.UploadLimitKB,
+			RatioLimit:               toml.Downloader.QBittorrent.RatioLimit,
+			SeedingTimeLimit:         toml.Downloader.QBittorrent.SeedingTimeLimit,
+			InactiveSeedingTimeLimit: toml.Downloader.QBittorrent.InactiveSeedingTimeLimit,
+			UseDownloadPath:          toml.Downloader.QBittorrent.UseDownloadPath,
+			SavePath:                 toml.Downloader.QBittorrent.SavePath,
+			Category:                 toml.Downloader.QBittorrent.Category,
+			FallbackThreshold:        toml.Downloader.QBittorrent.FallbackThreshold,
 		}
 		if cfg.Downloaders.QBittorrent.FallbackThreshold <= 0 {
 			cfg.Downloaders.QBittorrent.FallbackThreshold = 3
 		}
 
+		cfg.Offline.HistoryRetentionDays = toml.Offline.HistoryRetentionDays
+		if cfg.Offline.HistoryRetentionDays <= 0 {
+			cfg.Offline.HistoryRetentionDays = 365
+		}
 		cfg.Offline.GlobalExclude = append([]string(nil), toml.Offline.GlobalExclude...)
 		cfg.Offline.SkipX5 = toml.Offline.SkipX5
 		cfg.Offline.Retry = toml.Offline.Retry
@@ -411,6 +434,11 @@ func Resolve(cli CLIParams, toml *TOMLConfig, tomlPath string, legacy *LegacyCon
 		cfg.Offline.AutoSubtitle = normalizePriority(toml.Offline.AutoSubtitle, subtitle, map[string]bool{"softsub": true, "hardsub": true, "external": true})
 		cfg.Offline.AutoContainer = normalizePriority(toml.Offline.AutoContainer, container, map[string]bool{"mkv": true, "mp4": true})
 		cfg.Offline.AutoResolution = normalizePriority(toml.Offline.AutoResolution, resolution, map[string]bool{"r1080": true, "r2160": true, "r720": true})
+		if len(toml.Offline.AutoCustom) > 0 {
+			cfg.Offline.AutoCustom = append([]string(nil), toml.Offline.AutoCustom...)
+		} else {
+			cfg.Offline.AutoCustom = nil
+		}
 		cfg.Offline.AutoRules = toml.Offline.AutoRules
 		// [rename]
 		cfg.Rename.Enabled = toml.Rename.Enabled
@@ -501,6 +529,7 @@ func Resolve(cli CLIParams, toml *TOMLConfig, tomlPath string, legacy *LegacyCon
 			AutoBackupSubgroup:   toml.Lab.AutoBackupSubgroup,
 			AutoBackupFailures:   toml.Lab.AutoBackupFailures,
 			AutoBackupSkipOffset: toml.Lab.AutoBackupSkipOffset,
+			AutoBackupIdle:       toml.Lab.AutoBackupIdle,
 			AutoOffset:           toml.Lab.AutoOffset,
 			AutoOffsetSamples:    toml.Lab.AutoOffsetSamples,
 			AutoApplyRules:       toml.Lab.AutoApplyRules,
@@ -608,11 +637,11 @@ func LoadWithOptions(cliParams CLIParams, options LoadOptions) (*Config, *Config
 	// Track cookies path from TOML if configured
 	if options.Auth && tomlConfig != nil && tomlConfig.Auth.CookiesFile != "" {
 		cookiesPath := ResolveCookiesFile(tomlConfig.Auth.CookiesFile, tomlPath)
-		data, err := os.ReadFile(cookiesPath)
+		data, err := ReadCookiesFile(cookiesPath)
 		if err != nil {
 			return nil, nil, err
 		}
-		tomlConfig.Auth.Cookies = string(data)
+		tomlConfig.Auth.Cookies = data
 		source.CookiesPath = cookiesPath
 	}
 

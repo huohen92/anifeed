@@ -32,6 +32,7 @@ type feedPayload struct {
 	UpdateWeekday   int                   `json:"update_weekday"`
 	TotalEpisodes   int                   `json:"total_episodes"`
 	Completed       bool                  `json:"completed"`
+	AutoDisable     bool                  `json:"auto_disable"`
 	FinalCid        string                `json:"final_cid"`
 	FinalMode       int                   `json:"final_mode"`
 	FinalCustomMode int                   `json:"final_custom_mode"`
@@ -138,6 +139,7 @@ func (s *Server) handlePreviewFeed(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			name = copy.Url
 		}
+		copy.SubgroupName = strings.TrimSpace(subgroup.Name)
 		sources = append(sources, previewRSSSource(&copy, "backup", cfg.Name, name, copy.Url))
 	}
 
@@ -158,6 +160,7 @@ func (s *Server) handlePreviewFeed(w http.ResponseWriter, r *http.Request) {
 }
 
 func previewRSSSource(cfg *rsssite.RssConfig, role, name, subgroup, rawURL string) previewSource {
+	cfg.SubgroupName = strings.TrimSpace(subgroup)
 	source := previewSource{Role: role, Name: name, Subgroup: subgroup, URL: rawURL, Items: make([]previewItem, 0)}
 	total, items, err := rsssite.GetMagnetItemListWithStats(cfg)
 	if err != nil {

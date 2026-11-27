@@ -30,6 +30,7 @@ type themeImage struct {
 	URL      string `json:"url"`
 	Size     int64  `json:"size"`
 	Modified int64  `json:"modified"`
+	Builtin  bool   `json:"builtin,omitempty"`
 }
 
 type themeResponse struct {
@@ -61,10 +62,10 @@ func (s *Server) loadThemeSettings() themeSettings {
 		return out
 	}
 	_ = json.Unmarshal(data, &out)
-	if out.Desktop.Mode != "random" && out.Desktop.Mode != "none" {
+	if out.Desktop.Mode != "none" {
 		out.Desktop.Mode = "single"
 	}
-	if out.Mobile.Mode != "random" && out.Mobile.Mode != "none" {
+	if out.Mobile.Mode != "none" {
 		out.Mobile.Mode = "single"
 	}
 	return out
@@ -88,9 +89,8 @@ func (s *Server) saveThemeSettings(settings themeSettings) error {
 }
 
 func normalizeThemeMode(mode string) string {
-	mode = strings.ToLower(strings.TrimSpace(mode))
-	if mode == "random" || mode == "none" {
-		return mode
+	if strings.ToLower(strings.TrimSpace(mode)) == "none" {
+		return "none"
 	}
 	return "single"
 }
@@ -124,11 +124,29 @@ func (s *Server) listThemeImages(device string) []themeImage {
 	return out
 }
 
+var builtinThemeFiles = map[string][]string{
+	"desktop": {"desktop-1.webp", "desktop-2.webp", "desktop-3.webp", "desktop-4.webp"},
+	"mobile":  {"mobile-1.webp", "mobile-2.webp", "mobile-3.webp", "mobile-4.webp"},
+}
+
+func builtinThemeImages(device string) []themeImage {
+	files := builtinThemeFiles[device]
+	out := make([]themeImage, 0, len(files))
+	for i, file := range files {
+		out = append(out, themeImage{
+			Name:    fmt.Sprintf("builtin-%s-%d", device, i+1),
+			URL:     "/backgrounds/" + file,
+			Builtin: true,
+		})
+	}
+	return out
+}
+
 func (s *Server) themeResponse() themeResponse {
 	settings := s.loadThemeSettings()
 	out := themeResponse{Desktop: settings.Desktop, Mobile: settings.Mobile}
-	out.Images.Desktop = s.listThemeImages("desktop")
-	out.Images.Mobile = s.listThemeImages("mobile")
+	out.Images.Desktop = append(builtinThemeImages("desktop"), s.listThemeImages("desktop")...)
+	out.Images.Mobile = append(builtinThemeImages("mobile"), s.listThemeImages("mobile")...)
 	return out
 }
 

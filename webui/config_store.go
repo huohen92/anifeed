@@ -69,12 +69,14 @@ type EditableOffline struct {
 	AutoSubtitle         []string `json:"auto_subtitle"`
 	AutoContainer        []string `json:"auto_container"`
 	AutoResolution       []string `json:"auto_resolution"`
+	AutoCustom           []string `json:"auto_custom"`
 	AutoRules            bool     `json:"auto_rules"`
 	DualFolder           bool     `json:"dual_folder"`
 	FinalCid             string   `json:"final_cid"`
 	FinalMode            int      `json:"final_mode"`
 	FinalCid2            string   `json:"final_cid2"`
 	FinalPathTemplate    string   `json:"final_path_template"`
+	HistoryRetentionDays int      `json:"history_retention_days"`
 }
 
 // EditableTMDB holds TMDB API settings.
@@ -130,6 +132,7 @@ type EditableLab struct {
 	AutoBackupSubgroup   bool     `json:"auto_backup_subgroup"`
 	AutoBackupFailures   int      `json:"auto_backup_failures"`
 	AutoBackupSkipOffset bool     `json:"auto_backup_skip_offset"`
+	AutoBackupIdle       bool     `json:"auto_backup_idle"`
 	AutoOffset           bool     `json:"auto_offset"`
 	AutoOffsetSamples    int      `json:"auto_offset_samples"`
 	AutoApplyRules       bool     `json:"auto_apply_rules"`
@@ -160,17 +163,26 @@ type EditableAI struct {
 
 // EditableDownloader is one downloader configuration.
 type EditableDownloader struct {
-	Enabled           bool   `json:"enabled"`
-	OfflineCid        string `json:"offline_cid"`
-	SavePath          string `json:"save_path"`
-	OfflineParentID   string `json:"offline_parent_id"`
-	FallbackThreshold int    `json:"fallback_threshold"`
-	DailyLimit        int    `json:"daily_limit"`
-	HighSpeedMB       int    `json:"high_speed_mb"`
-	URL               string `json:"url"`
-	Username          string `json:"username"`
-	Password          string `json:"password"`
-	Category          string `json:"category"`
+	Enabled                  bool   `json:"enabled"`
+	OfflineCid               string `json:"offline_cid"`
+	SavePath                 string `json:"save_path"`
+	OfflineParentID          string `json:"offline_parent_id"`
+	FallbackThreshold        int    `json:"fallback_threshold"`
+	DailyLimit               int    `json:"daily_limit"`
+	HighSpeedMB              int    `json:"high_speed_mb"`
+	URL                      string `json:"url"`
+	Username                 string `json:"username"`
+	Password                 string `json:"password"`
+	APIKey                   string `json:"api_key"`
+	Category                 string `json:"category"`
+	Tags                     string `json:"tags"`
+	ContentLayout            string `json:"content_layout"`
+	DownloadLimitKB          int    `json:"download_limit_kb"`
+	UploadLimitKB            int    `json:"upload_limit_kb"`
+	RatioLimit               int    `json:"ratio_limit"`
+	SeedingTimeLimit         int    `json:"seeding_time_limit"`
+	InactiveSeedingTimeLimit int    `json:"inactive_seeding_time_limit"`
+	UseDownloadPath          bool   `json:"use_download_path"`
 }
 
 type EditableDownloaders struct {
@@ -199,6 +211,7 @@ type EditableRSS struct {
 	UpdateWeekday   int                `json:"update_weekday"`
 	TotalEpisodes   int                `json:"total_episodes"`
 	Completed       bool               `json:"completed"`
+	AutoDisable     bool               `json:"auto_disable"`
 	FinalCid        string             `json:"final_cid"`
 	FinalMode       int                `json:"final_mode"`
 	FinalCustomMode int                `json:"final_custom_mode"`
@@ -307,12 +320,14 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 			AutoSubtitle:         append([]string(nil), cfg.Offline.AutoSubtitle...),
 			AutoContainer:        append([]string(nil), cfg.Offline.AutoContainer...),
 			AutoResolution:       append([]string(nil), cfg.Offline.AutoResolution...),
+			AutoCustom:           append([]string(nil), cfg.Offline.AutoCustom...),
 			AutoRules:            cfg.Offline.AutoRules,
 			DualFolder:           cfg.Offline.DualFolder,
 			FinalCid:             cfg.Offline.FinalCid,
 			FinalMode:            cfg.Offline.FinalMode,
 			FinalCid2:            cfg.Offline.FinalCid2,
 			FinalPathTemplate:    cfg.Offline.FinalPathTemplate,
+			HistoryRetentionDays: cfg.Offline.HistoryRetentionDays,
 		},
 		Rename: EditableRename{
 			Enabled:  cfg.Rename.Enabled,
@@ -363,6 +378,7 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 			AutoBackupSubgroup:   cfg.Lab.AutoBackupSubgroup,
 			AutoBackupFailures:   cfg.Lab.AutoBackupFailures,
 			AutoBackupSkipOffset: cfg.Lab.AutoBackupSkipOffset,
+			AutoBackupIdle:       cfg.Lab.AutoBackupIdle,
 			AutoOffset:           cfg.Lab.AutoOffset,
 			AutoOffsetSamples:    cfg.Lab.AutoOffsetSamples,
 			AutoApplyRules:       cfg.Lab.AutoApplyRules,
@@ -379,13 +395,22 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 			},
 
 			QBittorrent: EditableDownloader{
-				Enabled:           cfg.Downloaders.QBittorrent.Enabled,
-				URL:               cfg.Downloaders.QBittorrent.URL,
-				Username:          cfg.Downloaders.QBittorrent.Username,
-				Password:          cfg.Downloaders.QBittorrent.Password,
-				SavePath:          cfg.Downloaders.QBittorrent.SavePath,
-				Category:          cfg.Downloaders.QBittorrent.Category,
-				FallbackThreshold: cfg.Downloaders.QBittorrent.FallbackThreshold,
+				Enabled:                  cfg.Downloaders.QBittorrent.Enabled,
+				URL:                      cfg.Downloaders.QBittorrent.URL,
+				Username:                 cfg.Downloaders.QBittorrent.Username,
+				Password:                 cfg.Downloaders.QBittorrent.Password,
+				APIKey:                   cfg.Downloaders.QBittorrent.APIKey,
+				Tags:                     cfg.Downloaders.QBittorrent.Tags,
+				ContentLayout:            cfg.Downloaders.QBittorrent.ContentLayout,
+				DownloadLimitKB:          cfg.Downloaders.QBittorrent.DownloadLimitKB,
+				UploadLimitKB:            cfg.Downloaders.QBittorrent.UploadLimitKB,
+				RatioLimit:               cfg.Downloaders.QBittorrent.RatioLimit,
+				SeedingTimeLimit:         cfg.Downloaders.QBittorrent.SeedingTimeLimit,
+				InactiveSeedingTimeLimit: cfg.Downloaders.QBittorrent.InactiveSeedingTimeLimit,
+				UseDownloadPath:          cfg.Downloaders.QBittorrent.UseDownloadPath,
+				SavePath:                 cfg.Downloaders.QBittorrent.SavePath,
+				Category:                 cfg.Downloaders.QBittorrent.Category,
+				FallbackThreshold:        cfg.Downloaders.QBittorrent.FallbackThreshold,
 			},
 		},
 		RSS:   make([]EditableRSS, 0),
@@ -436,6 +461,7 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 				UpdateWeekday:   rss.UpdateWeekday,
 				TotalEpisodes:   rss.TotalEpisodes,
 				Completed:       rss.Completed,
+				AutoDisable:     rss.AutoDisable,
 				FinalCid:        rss.FinalCid,
 				FinalMode:       rss.FinalMode,
 				FinalCustomMode: rss.FinalCustomMode,
@@ -476,6 +502,7 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 					UpdateWeekday:   rss.UpdateWeekday,
 					TotalEpisodes:   rss.TotalEpisodes,
 					Completed:       rss.Completed,
+					AutoDisable:     rss.AutoDisable,
 					FinalCid:        rss.FinalCid,
 					FinalMode:       rss.FinalMode,
 					FinalCustomMode: rss.FinalCustomMode,
@@ -523,6 +550,7 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 }
 
 func (s *Server) saveEditable(ec *EditableConfig) (*ConfigResponse, error) {
+	oldEnabled, oldUser, oldHash, oldSalt := s.authConfig()
 	if ec == nil {
 		return nil, fmt.Errorf("缺少配置内容")
 	}
@@ -544,7 +572,7 @@ func (s *Server) saveEditable(ec *EditableConfig) (*ConfigResponse, error) {
 	if err := os.MkdirAll(cookiesAbsDir(cookiesAbs), 0o755); err != nil {
 		return nil, fmt.Errorf("创建 Cookies 目录失败: %w", err)
 	}
-	if err := os.WriteFile(cookiesAbs, []byte(strings.TrimSpace(ec.Auth.Cookies)), 0o600); err != nil {
+	if err := config.WriteCookiesFile(cookiesAbs, ec.Auth.Cookies); err != nil {
 		return nil, fmt.Errorf("写入 Cookies 文件失败: %w", err)
 	}
 
@@ -553,6 +581,10 @@ func (s *Server) saveEditable(ec *EditableConfig) (*ConfigResponse, error) {
 	}
 	if err := s.reloadFromDisk(); err != nil {
 		return nil, fmt.Errorf("配置已保存，但重新加载失败: %w", err)
+	}
+	newEnabled, newUser, newHash, newSalt := s.authConfig()
+	if oldEnabled != newEnabled || oldUser != newUser || oldHash != newHash || oldSalt != newSalt {
+		s.clearAllAuthSessions()
 	}
 
 	resp, err := s.loadEditable()
@@ -750,6 +782,7 @@ func buildTOMLConfig(ec *EditableConfig, configPath string) (*config.TOMLConfig,
 			AutoSubtitle:         ec.Offline.AutoSubtitle,
 			AutoContainer:        ec.Offline.AutoContainer,
 			AutoResolution:       ec.Offline.AutoResolution,
+			AutoCustom:           ec.Offline.AutoCustom,
 			AutoRules:            ec.Offline.AutoRules,
 			DualFolder:           ec.Offline.DualFolder,
 			FinalCid:             strings.TrimSpace(ec.Offline.FinalCid),
@@ -761,6 +794,12 @@ func buildTOMLConfig(ec *EditableConfig, configPath string) (*config.TOMLConfig,
 			}(),
 			FinalCid2:         strings.TrimSpace(ec.Offline.FinalCid2),
 			FinalPathTemplate: strings.TrimSpace(ec.Offline.FinalPathTemplate),
+			HistoryRetentionDays: func() int {
+				if ec.Offline.HistoryRetentionDays <= 0 {
+					return 365
+				}
+				return ec.Offline.HistoryRetentionDays
+			}(),
 		},
 		Rename: config.TOMLRenameConfig{
 			Enabled:  ec.Rename.Enabled,
@@ -805,13 +844,22 @@ func buildTOMLConfig(ec *EditableConfig, configPath string) (*config.TOMLConfig,
 			},
 
 			QBittorrent: config.TOMLDownloaderConfig{
-				Enabled:           ec.Downloader.QBittorrent.Enabled,
-				URL:               strings.TrimSpace(ec.Downloader.QBittorrent.URL),
-				Username:          strings.TrimSpace(ec.Downloader.QBittorrent.Username),
-				Password:          ec.Downloader.QBittorrent.Password,
-				SavePath:          strings.TrimSpace(ec.Downloader.QBittorrent.SavePath),
-				Category:          strings.TrimSpace(ec.Downloader.QBittorrent.Category),
-				FallbackThreshold: ec.Downloader.QBittorrent.FallbackThreshold,
+				Enabled:                  ec.Downloader.QBittorrent.Enabled,
+				URL:                      strings.TrimSpace(ec.Downloader.QBittorrent.URL),
+				Username:                 strings.TrimSpace(ec.Downloader.QBittorrent.Username),
+				Password:                 ec.Downloader.QBittorrent.Password,
+				APIKey:                   strings.TrimSpace(ec.Downloader.QBittorrent.APIKey),
+				Tags:                     strings.TrimSpace(ec.Downloader.QBittorrent.Tags),
+				ContentLayout:            strings.TrimSpace(ec.Downloader.QBittorrent.ContentLayout),
+				DownloadLimitKB:          ec.Downloader.QBittorrent.DownloadLimitKB,
+				UploadLimitKB:            ec.Downloader.QBittorrent.UploadLimitKB,
+				RatioLimit:               ec.Downloader.QBittorrent.RatioLimit,
+				SeedingTimeLimit:         ec.Downloader.QBittorrent.SeedingTimeLimit,
+				InactiveSeedingTimeLimit: ec.Downloader.QBittorrent.InactiveSeedingTimeLimit,
+				UseDownloadPath:          ec.Downloader.QBittorrent.UseDownloadPath,
+				SavePath:                 strings.TrimSpace(ec.Downloader.QBittorrent.SavePath),
+				Category:                 strings.TrimSpace(ec.Downloader.QBittorrent.Category),
+				FallbackThreshold:        ec.Downloader.QBittorrent.FallbackThreshold,
 			},
 		},
 		Lab: config.TOMLLabConfig{
@@ -827,6 +875,7 @@ func buildTOMLConfig(ec *EditableConfig, configPath string) (*config.TOMLConfig,
 			AutoBackupSubgroup:   ec.Lab.AutoBackupSubgroup,
 			AutoBackupFailures:   ec.Lab.AutoBackupFailures,
 			AutoBackupSkipOffset: ec.Lab.AutoBackupSkipOffset,
+			AutoBackupIdle:       ec.Lab.AutoBackupIdle,
 			AutoOffset:           ec.Lab.AutoOffset,
 			AutoOffsetSamples:    ec.Lab.AutoOffsetSamples,
 			AutoApplyRules:       ec.Lab.AutoApplyRules,
@@ -887,6 +936,7 @@ func buildTOMLConfig(ec *EditableConfig, configPath string) (*config.TOMLConfig,
 			UpdateWeekday: rss.UpdateWeekday,
 			TotalEpisodes: rss.TotalEpisodes,
 			Completed:     rss.Completed,
+			AutoDisable:   rss.AutoDisable,
 			FinalCid:      strings.TrimSpace(rss.FinalCid),
 			FinalMode: func() int {
 				if rss.FinalMode == 2 {
@@ -986,6 +1036,7 @@ func (s *Server) rawConfig() (string, error) {
 }
 
 func (s *Server) saveRawConfig(content string) error {
+	oldEnabled, oldUser, oldHash, oldSalt := s.authConfig()
 	path, _, _ := s.metaSnapshot()
 	previous, previousErr := os.ReadFile(path)
 	if err := config.SaveTOMLBytes(path, []byte(content)); err != nil {
@@ -1001,6 +1052,10 @@ func (s *Server) saveRawConfig(content string) error {
 		}
 		_ = s.reloadFromDisk()
 		return fmt.Errorf("配置已回滚：%w", err)
+	}
+	newEnabled, newUser, newHash, newSalt := s.authConfig()
+	if oldEnabled != newEnabled || oldUser != newUser || oldHash != newHash || oldSalt != newSalt {
+		s.clearAllAuthSessions()
 	}
 	return nil
 }

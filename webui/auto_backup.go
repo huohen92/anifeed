@@ -3,6 +3,7 @@ package webui
 import (
 	"log"
 	"strings"
+	"time"
 
 	"github.com/huohen92/anifeed/config"
 	"github.com/huohen92/anifeed/p115"
@@ -67,6 +68,8 @@ func (s *Server) autoBackupSubgroups(cfg *config.Config, onlyURL string) {
 	if cfg == nil || !cfg.Lab.AutoBackupSubgroup {
 		return
 	}
+	s.autoBackupMu.Lock()
+	defer s.autoBackupMu.Unlock()
 	st, err := store.NewWithPath(s.databasePath())
 	if err != nil {
 		return
@@ -226,3 +229,46 @@ func preferredBackupGroup(preferred []string, name string) bool {
 }
 
 func ptrBool(v bool) *bool { return &v }
+
+// checkIdleAutoBackup triggers backup discovery for feeds that have had no
+// successful download for the configured idle period. It is independent from
+// the idle webhook notification, so it can be enabled without a webhook.
+func (s *Server) checkIdleAutoBackup(cfg *config.Config) {
+	if cfg == nil || !cfg.Lab.AutoBackupSubgroup || !cfg.Lab.AutoBackupIdle {
+		return
+	}
+	days := cfg.Notify.IdleDays
+	if days <= 0 {
+		days = 7
+	}
+	st, err := store.NewWithPath(s.databasePath())
+	if err != nil {
+		return
+	}
+	defer st.Close()
+	now := time.Now()
+	dayKey := now.Format("2006-01-02")
+	for _, feeds := range cfg.RSS {
+		for _, feed := range feeds {
+			if !feed.IsEnabled() || !feed.AutoBackupEnabled() {
+				continue
+			}
+			last, ok, lookupErr := st.LatestHistoryForFeed(feed.Url)
+			if lookupErr != nil || !ok || now.Sub(last) < time.Duration(days)*24*time.Hour {
+				continue
+			}
+			s.backupMu.Lock()
+			if s.idleBackupDay == nil {
+				s.idleBackupDay = map[string]string{}
+			}
+			if s.idleBackupDay[feed.Url] == dayKey {
+				s.backupMu.Unlock()
+				continue
+			}
+			s.idleBackupDay[feed.Url] = dayKey
+			s.backupMu.Unlock()
+			log.Printf("[auto-backup] 摸鱼 %d 天，检查备用 RSS: %s", days, feed.Name)
+			s.autoBackupSubgroups(cfg, feed.Url)
+		}
+	}
+}

@@ -7,6 +7,7 @@
   var MODE_KEY = 'anifeed_theme';
   var DEFAULTS = {
     bgImage: '',
+    bgBlur: 8,
     blur: 14,
     alpha: 0.72,
     accent: '#2563eb',
@@ -36,13 +37,7 @@
     var images = ((serverTheme.images || {})[key] || []);
     if (!images.length) return null;
     if (settings.mode === 'none') return null;
-    if (settings.mode === 'random') {
-      if (!serverPickName || !images.some(function (item) { return item.name === serverPickName; })) {
-        serverPickName = images[Math.floor(Math.random() * images.length)].name;
-      }
-    } else {
-      serverPickName = settings.selected || '';
-    }
+    serverPickName = settings.selected || '';
     return images.find(function (item) { return item.name === serverPickName; }) || images[0];
   }
 
@@ -131,6 +126,7 @@
     root.style.setProperty('--af-nav-border', theme === 'dark' ? nav.borderDark : nav.border);
     root.style.setProperty('--af-accent', t.accent || DEFAULTS.accent);
     root.style.setProperty('--af-blur', (Number(t.blur) || 0) + 'px');
+    root.style.setProperty('--af-bg-blur', (Number(t.bgBlur) || 0) + 'px');
     root.style.setProperty('--af-alpha', String(Number(t.alpha) || 0.72));
     root.style.setProperty('--af-radius', (t.radius === undefined ? DEFAULTS.radius : t.radius) + 'px');
     root.style.setProperty('--af-elev', String((t.elevation === undefined ? DEFAULTS.elevation : t.elevation) / 100));

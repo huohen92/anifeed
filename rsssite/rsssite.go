@@ -6,11 +6,11 @@ import (
 	urlPkg "net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/dlclark/regexp2"
-
 	"github.com/huohen92/anifeed/request"
+	"github.com/huohen92/anifeed/ruleengine"
 	"github.com/mmcdole/gofeed"
 )
 
@@ -82,8 +82,31 @@ func GetFeed(url string) *gofeed.Feed {
 	return feed
 }
 
+var feedCache sync.Map // url -> feedCacheEntry
+type feedCacheEntry struct {
+	feed *gofeed.Feed
+	at   time.Time
+}
+
 // FetchFeed downloads and parses a feed, returning the underlying error.
+// A short cache prevents preview, rule tests, and a run from downloading the
+// same RSS several times in one burst.
 func FetchFeed(url string) (*gofeed.Feed, error) {
+	if cached, ok := feedCache.Load(url); ok {
+		entry := cached.(feedCacheEntry)
+		if time.Since(entry.at) < 15*time.Second {
+			return entry.feed, nil
+		}
+	}
+	feed, err := fetchFeedUncached(url)
+	if err != nil {
+		return nil, err
+	}
+	feedCache.Store(url, feedCacheEntry{feed: feed, at: time.Now()})
+	return feed, nil
+}
+
+func fetchFeedUncached(url string) (*gofeed.Feed, error) {
 	res, err := request.Get(url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("get rss from %s: %w", url, err)
@@ -145,33 +168,53 @@ func magnetItemsFromFeedStrict(feed *gofeed.Feed, site MagnetSite, config *RssCo
 	return items, nil
 }
 
-func magnetItemsFromFeedDetailed(feed *gofeed.Feed, site MagnetSite, config *RssConfig) ([]PreviewMagnetItem, error) {
-	itemList := make([]PreviewMagnetItem, 0, len(feed.Items))
-	whiteRules, err := compileFilterRules(config.Filter)
-	if err != nil {
-		return nil, fmt.Errorf("invalid filter %q: %w", config.Filter, err)
+func subgroupNameForFeed(configured string, feed *gofeed.Feed) string {
+	configured = strings.TrimSpace(configured)
+	if configured != "" && !isASCII(configured) {
+		return configured
 	}
-	blackRules, err := compileFilterRules(config.Exclude)
-	if err != nil {
-		return nil, fmt.Errorf("invalid exclude %q: %w", config.Exclude, err)
-	}
-
-	type globalRule struct {
-		rule string
-		re   *regexp2.Regexp
-	}
-	globalRules := make([]globalRule, 0, len(config.GlobalExcludes))
-	for _, rule := range config.GlobalExcludes {
-		if strings.TrimSpace(rule) == "" {
+	for i, item := range feed.Items {
+		if i >= 30 {
+			break
+		}
+		match := subgroupTitlePattern.FindStringSubmatch(item.Title)
+		if len(match) != 2 {
 			continue
 		}
-		re, err := compileFilter(rule)
-		if err != nil {
-			return nil, fmt.Errorf("invalid global exclude %q: %w", rule, err)
+		name := strings.TrimSpace(match[1])
+		if name != "" && !isASCII(name) {
+			return name
 		}
-		globalRules = append(globalRules, globalRule{rule: rule, re: re})
 	}
+	return configured
+}
 
+func isASCII(value string) bool {
+	for _, r := range value {
+		if r > 127 {
+			return false
+		}
+	}
+	return true
+}
+
+var subgroupTitlePattern = regexp.MustCompile(`^\s*[\[【]([^\]】]{1,60})[\]】]`)
+
+func magnetItemsFromFeedDetailed(feed *gofeed.Feed, site MagnetSite, config *RssConfig) ([]PreviewMagnetItem, error) {
+	matchRules, err := ruleengine.Parse(config.Filter)
+	if err != nil {
+		return nil, fmt.Errorf("匹配规则格式错误: %w", err)
+	}
+	excludeRules, err := ruleengine.Parse(config.Exclude)
+	if err != nil {
+		return nil, fmt.Errorf("排除规则格式错误: %w", err)
+	}
+	globalRules, err := ruleengine.Parse(strings.Join(config.GlobalExcludes, "\n"))
+	if err != nil {
+		return nil, fmt.Errorf("全局排除规则格式错误: %w", err)
+	}
+	subgroup := subgroupNameForFeed(config.SubgroupName, feed)
+	itemList := make([]PreviewMagnetItem, 0, len(feed.Items))
 	for _, item := range feed.Items {
 		entry := PreviewMagnetItem{Item: site.GetMagnetItem(item)}
 		if config.SkipX5 && x5EpisodePattern.MatchString(item.Title) {
@@ -180,34 +223,66 @@ func magnetItemsFromFeedDetailed(feed *gofeed.Feed, site MagnetSite, config *Rss
 			itemList = append(itemList, entry)
 			continue
 		}
-		globallyExcluded := false
-		for _, rule := range globalRules {
-			if matchRule(item.Title, rule.rule, rule.re) {
-				globallyExcluded = true
-				break
+		decision := ruleengine.Evaluate(item.Title, subgroup, matchRules, excludeRules, globalRules)
+		if !decision.Matched {
+			entry.Filtered = true
+			entry.Reason = decision.Reason
+			if decision.Rule != "" {
+				entry.Reason += "：" + decision.Rule
 			}
-		}
-		if globallyExcluded {
-			entry.Filtered = true
-			entry.Reason = "命中全局排除"
-			itemList = append(itemList, entry)
-			continue
-		}
-		if !matchFilterRules(item.Title, whiteRules, true) {
-			entry.Filtered = true
-			entry.Reason = "未通过 filter"
-			itemList = append(itemList, entry)
-			continue
-		}
-		if matchFilterRules(item.Title, blackRules, false) {
-			entry.Filtered = true
-			entry.Reason = "命中 exclude"
-			itemList = append(itemList, entry)
-			continue
 		}
 		itemList = append(itemList, entry)
 	}
 	return itemList, nil
+}
+
+type cachedFeed struct {
+	feed *gofeed.Feed
+	at   time.Time
+}
+
+var previewFeedCache = struct {
+	sync.Mutex
+	entries map[string]cachedFeed
+}{entries: map[string]cachedFeed{}}
+
+func fetchFeedForPreview(rawURL string, ttl time.Duration) (*gofeed.Feed, error) {
+	now := time.Now()
+	previewFeedCache.Lock()
+	entry, ok := previewFeedCache.entries[rawURL]
+	previewFeedCache.Unlock()
+	if ok && now.Sub(entry.at) < ttl {
+		return entry.feed, nil
+	}
+	feed, err := FetchFeed(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	previewFeedCache.Lock()
+	for key, value := range previewFeedCache.entries {
+		if now.Sub(value.at) > 30*time.Minute {
+			delete(previewFeedCache.entries, key)
+		}
+	}
+	previewFeedCache.entries[rawURL] = cachedFeed{feed: feed, at: now}
+	previewFeedCache.Unlock()
+	return feed, nil
+}
+
+// GetMagnetItemsPreviewCached is used by the interactive rules preview. It
+// reuses a parsed RSS feed for a few minutes so editing rules does not hammer
+// the source. Normal scheduled/manual runs still call the non-cached path.
+func GetMagnetItemsPreviewCached(config *RssConfig, ttl time.Duration) (int, []PreviewMagnetItem, error) {
+	site := getSiteForConfig(config)
+	feed, err := fetchFeedForPreview(config.Url, ttl)
+	if err != nil {
+		return 0, nil, err
+	}
+	items, err := magnetItemsFromFeedDetailed(feed, site, config)
+	if err != nil {
+		return len(feed.Items), nil, err
+	}
+	return len(feed.Items), items, nil
 }
 
 // GetMagnetItemsPreview returns every RSS item, including items filtered out by
@@ -223,99 +298,6 @@ func GetMagnetItemsPreview(config *RssConfig) (total int, items []PreviewMagnetI
 		return len(feed.Items), nil, err
 	}
 	return len(feed.Items), items, nil
-}
-
-type filterRule struct {
-	group   string
-	literal string
-	re      *regexp2.Regexp
-}
-
-// compileFilterRules parses newline-separated rules. A line may be a plain
-// substring, /regex/, or ani-rss style {{subgroup}}:regex.
-func compileFilterRules(raw string) ([]filterRule, error) {
-	var rules []filterRule
-	for lineNo, line := range strings.Split(raw, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "{{") {
-			end := strings.Index(line, "}}")
-			if end < 0 || end+2 >= len(line) || line[end+2] != ':' {
-				return nil, fmt.Errorf("line %d: expected {{subgroup}}:regex", lineNo+1)
-			}
-			group := strings.TrimSpace(line[2:end])
-			pattern := strings.TrimSpace(line[end+3:])
-			if group == "" || pattern == "" {
-				return nil, fmt.Errorf("line %d: empty subgroup or pattern", lineNo+1)
-			}
-			re, err := regexp2.Compile(pattern, 0)
-			if err != nil {
-				return nil, fmt.Errorf("line %d: %w", lineNo+1, err)
-			}
-			rules = append(rules, filterRule{group: group, re: re})
-			continue
-		}
-		re, err := compileFilter(line)
-		if err != nil {
-			return nil, fmt.Errorf("line %d: %w", lineNo+1, err)
-		}
-		rules = append(rules, filterRule{literal: line, re: re})
-	}
-	return rules, nil
-}
-
-func matchFilterRules(title string, rules []filterRule, all bool) bool {
-	if len(rules) == 0 {
-		return all
-	}
-	for _, rule := range rules {
-		matched := false
-		if rule.group != "" {
-			if strings.Contains(title, "["+rule.group+"]") || strings.Contains(title, "【"+rule.group+"】") {
-				matched = rule.re != nil && matchRegex(rule.re, title)
-			}
-		} else if rule.re != nil {
-			matched = matchRegex(rule.re, title)
-		} else {
-			matched = strings.Contains(title, rule.literal)
-		}
-		if all && !matched {
-			return false
-		}
-		if !all && matched {
-			return true
-		}
-	}
-	return all
-}
-
-func matchRegex(re *regexp2.Regexp, title string) bool {
-	matched, _ := re.MatchString(title)
-	return matched
-}
-
-// compileFilter compiles a /regex/ rule into a regexp2 pattern.
-// A plain substring rule returns nil and is matched via strings.Contains.
-func compileFilter(rule string) (*regexp2.Regexp, error) {
-	if strings.HasPrefix(rule, "/") && strings.HasSuffix(rule, "/") && len(rule) > 2 {
-		return regexp2.Compile(rule[1:len(rule)-1], 0)
-	}
-	return nil, nil
-}
-
-// matchRule reports whether title matches the filter rule.
-// An empty rule matches everything.
-func matchRule(title, rule string, re *regexp2.Regexp) bool {
-	if rule == "" {
-		return true
-	}
-	if re != nil {
-		m, _ := re.MatchString(title)
-		return m
-	}
-	return strings.Contains(title, rule)
 }
 
 func GetMagnetByEnclosure(item *gofeed.Item) string {

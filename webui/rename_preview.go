@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/huohen92/anifeed/config"
 	"github.com/huohen92/anifeed/p115"
@@ -107,8 +108,12 @@ func (s *Server) handleRenamePreview(w http.ResponseWriter, r *http.Request) {
 	if query.Has("tmdb_type") {
 		feed.TmdbType = strings.TrimSpace(query.Get("tmdb_type"))
 	}
+	if query.Has("subgroup") {
+		feed.SubgroupName = strings.TrimSpace(query.Get("subgroup"))
+	}
 	rssConfig := rsssite.RssConfig{
 		Name:         feed.Name,
+		SubgroupName: strings.TrimSpace(feed.SubgroupName),
 		Url:          feed.Url,
 		Source:       feed.Source,
 		Cid:          feed.Cid,
@@ -138,7 +143,7 @@ func (s *Server) handleRenamePreview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	total, detailed, err := rsssite.GetMagnetItemsPreview(&rssConfig)
+	total, detailed, err := rsssite.GetMagnetItemsPreviewCached(&rssConfig, 5*time.Minute)
 	if err != nil {
 		writeAPIError(w, http.StatusBadGateway, "读取 RSS 失败: "+err.Error())
 		return

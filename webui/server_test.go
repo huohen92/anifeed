@@ -157,11 +157,11 @@ func TestConfigAPIWritesAndReloads(t *testing.T) {
 	if !strings.Contains(text, `name = "新订阅"`) {
 		t.Errorf("config.toml missing feed:\n%s", text)
 	}
-	cookies, err := os.ReadFile(filepath.Join(dir, ".cookies"))
+	cookies, err := config.ReadCookiesFile(filepath.Join(dir, ".cookies"))
 	if err != nil {
 		t.Fatalf(".cookies not written: %v", err)
 	}
-	if strings.TrimSpace(string(cookies)) != "UID=1; CID=2; SEID=3; KID=4" {
+	if strings.TrimSpace(cookies) != "UID=1; CID=2; SEID=3; KID=4" {
 		t.Errorf(".cookies = %q", cookies)
 	}
 
@@ -372,8 +372,8 @@ func TestStaticIndexAndSecurityHeaders(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("GET /app.js = %d", rec.Code)
 	}
-	if !strings.Contains(rec.Header().Get("Cache-Control"), "no-cache") {
-		t.Errorf("Cache-Control = %q", rec.Header().Get("Cache-Control"))
+	if cache := rec.Header().Get("Cache-Control"); !strings.Contains(cache, "no-cache") && !strings.Contains(cache, "max-age") {
+		t.Errorf("Cache-Control = %q", cache)
 	}
 }
 

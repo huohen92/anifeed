@@ -29,6 +29,7 @@ func New(db *sql.DB) *Store {
 		}
 		return store
 	}
+	db.SetMaxOpenConns(1)
 	if err := initSchema(db); err != nil {
 		panic(err)
 	}
@@ -55,6 +56,12 @@ func NewWithPath(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Serialise access on one connection so SQLite never returns "database is
+	// locked" during concurrent preview/auto-run requests. WAL keeps reads fast.
+	db.SetMaxOpenConns(1)
+	_, _ = db.Exec("PRAGMA journal_mode=WAL")
+	_, _ = db.Exec("PRAGMA synchronous=NORMAL")
+	_, _ = db.Exec("PRAGMA busy_timeout=5000")
 	if err := initSchema(db); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -69,7 +76,7 @@ func NewWithPath(path string) (*Store, error) {
 }
 
 func initSchema(db *sql.DB) error {
-	if _, err := db.Exec("CREATE TABLE if not exists `rss_items` (`id` INTEGER PRIMARY KEY AUTOINCREMENT, `link` VARCHAR(255), `title` VARCHAR(255), `guid` VARCHAR(255), `pubDate` DATETIME, `creator` VARCHAR(255), `summary` TEXT, `content` VARCHAR(255), `isoDate` DATETIME, `categories` VARCHAR(255), `contentSnippet` VARCHAR(255), `done` TINYINT(1) DEFAULT 0, `magnet` VARCHAR(255) NOT NULL, `createdAt` DATETIME NOT NULL, `updatedAt` DATETIME NOT NULL)"); err != nil {
+	if _, err := db.Exec("CREATE TABLE if not exists `rss_items` (`id` INTEGER PRIMARY KEY AUTOINCREMENT, `link` VARCHAR(255), `title` VARCHAR(255), `guid` VARCHAR(255), `pubDate` DATETIME, `creator` VARCHAR(255), `summary` TEXT, `content` VARCHAR(255), `isoDate` DATETIME, `categories` VARCHAR(255), `contentSnippet` VARCHAR(255), `done` TINYINT(1) DEFAULT 0, `magnet` VARCHAR(255) NOT NULL, `xt` TEXT, `createdAt` DATETIME NOT NULL, `updatedAt` DATETIME NOT NULL)"); err != nil {
 		return err
 	}
 	if _, err := db.Exec("CREATE TABLE if not exists `sites_status` (`id` INTEGER PRIMARY KEY AUTOINCREMENT, `name` VARCHAR(255), `needLogin` TINYINT(1), `abnormalOp` TINYINT(1), `createdAt` DATETIME NOT NULL, `updatedAt` DATETIME NOT NULL)"); err != nil {
@@ -81,6 +88,11 @@ func initSchema(db *sql.DB) error {
 	if _, err := db.Exec("CREATE TABLE if not exists `preview_decisions` (`feed_url` TEXT NOT NULL, `item_key` TEXT NOT NULL, `allowed` TINYINT(1) NOT NULL, `updated_at` DATETIME NOT NULL, PRIMARY KEY (`feed_url`, `item_key`))"); err != nil {
 		return err
 	}
+	if _, err := db.Exec("CREATE TABLE if not exists `qb_fallback` (`info_hash` TEXT PRIMARY KEY, `title` TEXT, `state` TEXT NOT NULL DEFAULT 'submitted', `completed_at` DATETIME, `created_at` DATETIME NOT NULL)"); err != nil {
+		return err
+	}
+	_, _ = db.Exec("ALTER TABLE `qb_fallback` ADD COLUMN `state` TEXT NOT NULL DEFAULT 'submitted'")
+	_, _ = db.Exec("ALTER TABLE `qb_fallback` ADD COLUMN `completed_at` DATETIME")
 	if _, err := db.Exec("CREATE TABLE if not exists `idle_reminders` (`feed_url` TEXT NOT NULL, `day` TEXT NOT NULL, `sent_at` DATETIME NOT NULL, PRIMARY KEY (`feed_url`, `day`))"); err != nil {
 		return err
 	}
@@ -107,6 +119,7 @@ func migrateSchema(db *sql.DB) error {
 		{"configName", "ALTER TABLE `rss_items` ADD COLUMN `configName` VARCHAR(255)"},
 		{"configUrl", "ALTER TABLE `rss_items` ADD COLUMN `configUrl` VARCHAR(255)"},
 		{"taskHash", "ALTER TABLE `rss_items` ADD COLUMN `taskHash` VARCHAR(255)"},
+		{"xt", "ALTER TABLE `rss_items` ADD COLUMN `xt` TEXT"},
 	}
 	for _, a := range additions {
 		if cols[a.col] {
@@ -131,6 +144,26 @@ func migrateSchema(db *sql.DB) error {
 	_, _ = db.Exec("ALTER TABLE `offline_postprocess` ADD COLUMN `source_url` TEXT")
 	_, _ = db.Exec("ALTER TABLE `offline_postprocess` ADD COLUMN `rename_season` INTEGER NOT NULL DEFAULT 0")
 	_, _ = db.Exec("ALTER TABLE `offline_postprocess` ADD COLUMN `rename_offset` INTEGER NOT NULL DEFAULT 0")
+	if err := backfillXT(db); err != nil {
+		return err
+	}
+	if _, err := db.Exec("CREATE TABLE if not exists `qb_fallback` (`info_hash` TEXT PRIMARY KEY, `title` TEXT, `state` TEXT NOT NULL DEFAULT 'submitted', `completed_at` DATETIME, `created_at` DATETIME NOT NULL)"); err != nil {
+		return err
+	}
+	_, _ = db.Exec("ALTER TABLE `qb_fallback` ADD COLUMN `state` TEXT NOT NULL DEFAULT 'submitted'")
+	_, _ = db.Exec("ALTER TABLE `qb_fallback` ADD COLUMN `completed_at` DATETIME")
+
+	for _, stmt := range []string{
+		"CREATE INDEX IF NOT EXISTS idx_rss_items_xt ON rss_items(xt)",
+		"CREATE INDEX IF NOT EXISTS idx_rss_items_magnet ON rss_items(magnet)",
+		"CREATE INDEX IF NOT EXISTS idx_rss_items_config_created ON rss_items(configName, createdAt)",
+		"CREATE INDEX IF NOT EXISTS idx_rss_items_config_url ON rss_items(configUrl)",
+		"CREATE INDEX IF NOT EXISTS idx_postprocess_state_created ON offline_postprocess(state, created_at)",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -183,8 +216,8 @@ func (s *Store) SaveMagnetItemsWithPostprocess(items []rsssite.MagnetItem, confi
 
 	now := time.Now()
 	for i, item := range items {
-		stmt := "INSERT INTO rss_items (`link`,`title`,`content`,`magnet`,`configName`,`configUrl`,`taskHash`,`done`,`createdAt`,`updatedAt`) VALUES (?,?,?,?,?,?,?,?,?,?)"
-		_, err := tx.Exec(stmt, item.Link, item.Title, item.Content, item.Magnet, configName, configUrl, hashes[i], 0, now, now)
+		stmt := "INSERT INTO rss_items (`link`,`title`,`content`,`magnet`,`xt`,`configName`,`configUrl`,`taskHash`,`done`,`createdAt`,`updatedAt`) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+		_, err := tx.Exec(stmt, item.Link, item.Title, item.Content, item.Magnet, magnetXT(item.Magnet), configName, configUrl, hashes[i], 0, now, now)
 		if err != nil {
 			return err
 		}
@@ -320,22 +353,100 @@ func (s *Store) FailPostTask(taskHash, message string, maxAttempts int) error {
 	return err
 }
 
-func (s *Store) HasItem(magnet string) bool {
+func (s *Store) IsQBFallbackSubmitted(infoHash string) bool {
 	var count int
-	s.DBInstance.QueryRow("SELECT count(*) AS num FROM rss_items WHERE magnet = ?", magnet).Scan(&count)
+	_ = s.DBInstance.QueryRow("SELECT count(*) FROM qb_fallback WHERE info_hash = ?", strings.TrimSpace(infoHash)).Scan(&count)
 	return count > 0
 }
 
-// @TODO 替换 HasItem. 注意目前 magnet 存的长度是 VARCHAR(255)。有tracker的长URI会存不了.
-func (s *Store) HasMagnetByXt(magnet string) bool {
-	var count int
-	u, err := url.Parse(magnet)
+func (s *Store) MarkQBFallbackSubmitted(infoHash, title string) error {
+	_, err := s.DBInstance.Exec("INSERT OR REPLACE INTO qb_fallback (info_hash, title, state, completed_at, created_at) VALUES (?, ?, 'submitted', NULL, ?)", strings.TrimSpace(infoHash), title, time.Now())
+	return err
+}
+
+func (s *Store) MarkQBFallbackCompleted(infoHash string) error {
+	_, err := s.DBInstance.Exec("UPDATE qb_fallback SET state = 'completed', completed_at = ? WHERE info_hash = ?", time.Now(), strings.TrimSpace(infoHash))
+	return err
+}
+
+func (s *Store) QBFallbackHashes() (map[string]bool, error) {
+	rows, err := s.DBInstance.Query("SELECT info_hash FROM qb_fallback")
 	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := map[string]bool{}
+	for rows.Next() {
+		var hash string
+		if err := rows.Scan(&hash); err != nil {
+			return nil, err
+		}
+		result[hash] = true
+	}
+	return result, rows.Err()
+}
+
+func (s *Store) HasItem(magnet string) bool {
+	if s.HasMagnetByXt(magnet) {
+		return true
+	}
+	var count int
+	_ = s.DBInstance.QueryRow("SELECT count(*) AS num FROM rss_items WHERE magnet = ?", magnet).Scan(&count)
+	return count > 0
+}
+
+func magnetXT(magnet string) string {
+	u, err := url.Parse(strings.TrimSpace(magnet))
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(u.Query().Get("xt")))
+}
+
+func backfillXT(db *sql.DB) error {
+	rows, err := db.Query("SELECT id, magnet FROM rss_items WHERE xt IS NULL OR xt = ''")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	type row struct {
+		id     int64
+		magnet string
+	}
+	var pending []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.magnet); err != nil {
+			return err
+		}
+		pending = append(pending, r)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_ = rows.Close()
+	for _, r := range pending {
+		if xt := magnetXT(r.magnet); xt != "" {
+			if _, err := db.Exec("UPDATE rss_items SET xt = ? WHERE id = ?", xt, r.id); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Store) HasMagnetByXt(magnet string) bool {
+	xt := magnetXT(magnet)
+	if xt == "" {
 		return false
 	}
-	params := u.Query()
-	xt := params.Get("xt")
-	s.DBInstance.QueryRow("SELECT count(*) AS num FROM rss_items WHERE magnet LIKE ?", "%"+xt+"%").Scan(&count)
+	var count int
+	_ = s.DBInstance.QueryRow("SELECT count(*) AS num FROM rss_items WHERE xt = ?", xt).Scan(&count)
+	if count > 0 {
+		return true
+	}
+	// Legacy rows written before the xt column existed.
+	_ = s.DBInstance.QueryRow("SELECT count(*) AS num FROM rss_items WHERE magnet LIKE ?", "%"+xt+"%").Scan(&count)
 	return count > 0
 }
 
@@ -773,4 +884,66 @@ func (s *Store) DeleteHistoryForFeed(name, rawURL string) (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// CleanupRetention removes short-lived bookkeeping rows. It never touches
+// rss_items history; callers can decide their own retention policy for that.
+func (s *Store) CleanupRetention(now time.Time) error {
+	for _, stmt := range []string{
+		"DELETE FROM preview_decisions WHERE updated_at < ?",
+		"DELETE FROM idle_reminders WHERE sent_at < ?",
+		"DELETE FROM qb_fallback WHERE created_at < ?",
+		"DELETE FROM offline_postprocess WHERE state IN ('done', 'failed') AND updated_at < ?",
+	} {
+		if _, err := s.DBInstance.Exec(stmt, now.AddDate(0, 0, -90)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type QBFallbackRecord struct {
+	InfoHash    string     `json:"info_hash"`
+	Title       string     `json:"title"`
+	CreatedAt   time.Time  `json:"created_at"`
+	State       string     `json:"state"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+}
+
+func (s *Store) QBFallbackRecords(limit int) ([]QBFallbackRecord, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := s.DBInstance.Query("SELECT info_hash, title, created_at, state, completed_at FROM qb_fallback ORDER BY created_at DESC LIMIT ?", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]QBFallbackRecord, 0)
+	for rows.Next() {
+		var record QBFallbackRecord
+		var completed sql.NullTime
+		if err := rows.Scan(&record.InfoHash, &record.Title, &record.CreatedAt, &record.State, &completed); err != nil {
+			return nil, err
+		}
+		if completed.Valid {
+			record.CompletedAt = &completed.Time
+		}
+		if record.State == "" {
+			record.State = "submitted"
+		}
+		out = append(out, record)
+	}
+	return out, rows.Err()
+}
+
+// CleanupHistory removes old RSS submission history while keeping rows that
+// are still referenced by a pending post-download task.
+func (s *Store) CleanupHistory(now time.Time, days int) error {
+	if days <= 0 {
+		days = 365
+	}
+	cutoff := now.AddDate(0, 0, -days)
+	_, err := s.DBInstance.Exec("DELETE FROM rss_items WHERE createdAt < ? AND (taskHash IS NULL OR taskHash = '' OR taskHash NOT IN (SELECT task_hash FROM offline_postprocess WHERE state = 'pending'))", cutoff)
+	return err
 }

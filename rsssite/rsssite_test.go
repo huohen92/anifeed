@@ -141,48 +141,6 @@ func TestReadRssConfigDictFromUserConfigDir(t *testing.T) {
 	}
 }
 
-func TestCompileFilter(t *testing.T) {
-	t.Parallel()
-	// plain substring rules are not compiled into a regex
-	if re, err := compileFilter("简体内嵌"); err != nil || re != nil {
-		t.Errorf("compileFilter(plain) = (%v, %v), want (nil, nil)", re, err)
-	}
-	// /.../-wrapped rules compile into a regex
-	if re, err := compileFilter("/简体|1080p/"); err != nil || re == nil {
-		t.Errorf("compileFilter(/regex/) = (%v, %v), want non-nil", re, err)
-	}
-	// invalid regex returns an error instead of panicking
-	if _, err := compileFilter("/[abc/"); err == nil {
-		t.Error("compileFilter(invalid) = nil error, want error")
-	}
-}
-
-func TestMatchRule(t *testing.T) {
-	t.Parallel()
-	// empty rule matches everything (no whitelist/blacklist restriction)
-	if !matchRule("anything", "", nil) {
-		t.Errorf("empty rule should match all titles")
-	}
-	// plain substring
-	if !matchRule("简日双语 1080p", "简日双语", nil) {
-		t.Errorf("substring present should match")
-	}
-	if matchRule("简体内嵌 720p", "简日双语", nil) {
-		t.Errorf("substring absent should not match")
-	}
-	// regex (whitelist: match to include; blacklist: match to exclude)
-	re, err := compileFilter("/简体|1080p/")
-	if err != nil {
-		t.Fatalf("compileFilter() error = %v", err)
-	}
-	if !matchRule("简体内嵌 1080p", "/简体|1080p/", re) {
-		t.Errorf("regex match should return true")
-	}
-	if matchRule("繁體 720p", "/简体|1080p/", re) {
-		t.Errorf("regex non-match should return false")
-	}
-}
-
 func TestMagnetItemsFromFeedFilters(t *testing.T) {
 	feed := &gofeed.Feed{Items: []*gofeed.Item{
 		{Title: "WEB-DL keep", Link: "https://mikanani.me/Home/Episode/1111111111111111111111111111111111111111"},
@@ -333,20 +291,22 @@ func TestAniRSSGroupFilterSyntax(t *testing.T) {
 {{今晚月色真美}}:日
 {{今晚月色真美}}:内嵌
 {{今晚月色真美}}:avc|Avc|AVC`
-	rules, err := compileFilterRules(raw)
+	feed := &gofeed.Feed{Items: []*gofeed.Item{
+		{Title: "【今晚月色真美】[青之箱 第二季 / アオのハコ Season 2][03][WebRip][1080P][AVC-8bit][AAC][简日内嵌]"},
+		{Title: "【今晚月色真美】[青之箱 第二季 / アオのハコ Season 2][03][WebRip][1080P][AVC-8bit][AAC][繁日內嵌]"},
+		{Title: "【其他字幕组】[青之箱][03][1080P][AVC][简日内嵌]"},
+	}}
+	detailed, err := magnetItemsFromFeedDetailed(feed, &Generic{}, &RssConfig{Filter: raw, SubgroupName: "今晚月色真美"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	good := "【今晚月色真美】[青之箱 第二季 / アオのハコ Season 2][03][WebRip][1080P][AVC-8bit][AAC][简日内嵌]"
-	if !matchFilterRules(good, rules, true) {
-		t.Error("expected simplified AVC hardsub title to match")
+	if detailed[0].Filtered {
+		t.Errorf("good title should pass: %s", detailed[0].Reason)
 	}
-	bad := "【今晚月色真美】[青之箱 第二季 / アオのハコ Season 2][03][WebRip][1080P][AVC-8bit][AAC][繁日內嵌]"
-	if matchFilterRules(bad, rules, true) {
-		t.Error("traditional title should not match simplified filter")
+	if !detailed[1].Filtered {
+		t.Error("traditional title should fail the simplified filter")
 	}
-	other := "【其他字幕组】[青之箱][03][1080P][AVC][简日内嵌]"
-	if matchFilterRules(other, rules, true) {
-		t.Error("other subgroup should not match group-specific filter")
+	if detailed[2].Filtered {
+		t.Errorf("rules for another subgroup must be ignored: %s", detailed[2].Reason)
 	}
 }

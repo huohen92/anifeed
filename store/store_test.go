@@ -393,3 +393,76 @@ func TestFailedTaskHashesAndDelete(t *testing.T) {
 		t.Fatal("history row was not deleted")
 	}
 }
+
+func TestQBFallbackPersistence(t *testing.T) {
+	db, _ := sql.Open("sqlite3", ":memory:")
+	s := New(db)
+	if s.IsQBFallbackSubmitted("hash-a") {
+		t.Fatal("unexpected initial fallback")
+	}
+	if err := s.MarkQBFallbackSubmitted("hash-a", "episode 1"); err != nil {
+		t.Fatal(err)
+	}
+	if !s.IsQBFallbackSubmitted("hash-a") {
+		t.Fatal("fallback not persisted")
+	}
+	hashes, err := s.QBFallbackHashes()
+	if err != nil || !hashes["hash-a"] {
+		t.Fatalf("hashes = %v, err = %v", hashes, err)
+	}
+}
+
+func TestCleanupRetentionRemovesOldBookkeeping(t *testing.T) {
+	db, _ := sql.Open("sqlite3", ":memory:")
+	s := New(db)
+	old := time.Now().AddDate(0, 0, -120)
+	if _, err := db.Exec("INSERT INTO preview_decisions (feed_url,item_key,allowed,updated_at) VALUES (?,?,?,?)", "f", "i", 1, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO idle_reminders (feed_url,day,sent_at) VALUES (?,?,?)", "f", "2026-01-01", old); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkQBFallbackSubmitted("old-hash", "old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE qb_fallback SET created_at = ? WHERE info_hash = ?", old, "old-hash"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CleanupRetention(time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	for _, table := range []string{"preview_decisions", "idle_reminders", "qb_fallback"} {
+		if err := db.QueryRow("SELECT count(*) FROM " + table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("%s retained %d old rows", table, count)
+		}
+	}
+}
+
+func TestCleanupHistoryKeepsPendingTasks(t *testing.T) {
+	db, _ := sql.Open("sqlite3", ":memory:")
+	s := New(db)
+	old := time.Now().AddDate(0, 0, -400)
+	if _, err := db.Exec("INSERT INTO rss_items (title,magnet,configUrl,taskHash,createdAt,updatedAt) VALUES (?,?,?,?,?,?)", "old", "magnet:?xt=urn:btih:aa", "u", "done-hash", old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO rss_items (title,magnet,configUrl,taskHash,createdAt,updatedAt) VALUES (?,?,?,?,?,?)", "pending", "magnet:?xt=urn:btih:bb", "u", "pending-hash", old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO offline_postprocess (task_hash,state,created_at,updated_at) VALUES (?,?,?,?)", "pending-hash", "pending", old, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CleanupHistory(time.Now(), 365); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow("SELECT count(*) FROM rss_items").Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("history rows = %d, want 1 pending", count)
+	}
+}

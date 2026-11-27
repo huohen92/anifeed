@@ -37,10 +37,12 @@ type OfflineConfig struct {
 	AutoRules         bool
 
 	// AutoPriority orders the options used by "apply best rules".
-	AutoLanguage   []string
-	AutoSubtitle   []string
-	AutoContainer  []string
-	AutoResolution []string
+	AutoLanguage         []string
+	AutoSubtitle         []string
+	AutoContainer        []string
+	AutoResolution       []string
+	AutoCustom           []string
+	HistoryRetentionDays int
 }
 
 // RenameConfig controls renaming completed offline entries.
@@ -224,15 +226,21 @@ func sanitizePathSegment(value string) string {
 
 // DefaultOfflineConfig returns the defaults used when config.toml does not
 // contain an [offline] section.
+func DefaultGlobalExclude() []string {
+	return []string{`720[Pp]`, `\d-\d`, `合集`, `特别篇`}
+}
+
 func DefaultOfflineConfig() OfflineConfig {
 	language, subtitle, container, resolution := DefaultAutoPriority()
 	return OfflineConfig{
-		Retry:          0,
-		OnePerEpisode:  false,
-		AutoLanguage:   language,
-		AutoSubtitle:   subtitle,
-		AutoContainer:  container,
-		AutoResolution: resolution,
+		GlobalExclude:        DefaultGlobalExclude(),
+		Retry:                0,
+		OnePerEpisode:        false,
+		AutoLanguage:         language,
+		AutoSubtitle:         subtitle,
+		AutoContainer:        container,
+		AutoResolution:       resolution,
+		HistoryRetentionDays: 365,
 	}
 }
 

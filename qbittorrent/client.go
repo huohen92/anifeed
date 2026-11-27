@@ -2,11 +2,13 @@ package qbittorrent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,6 +18,7 @@ type Client struct {
 	baseURL  string
 	username string
 	password string
+	apiKey   string
 	http     *http.Client
 }
 
@@ -31,6 +34,15 @@ func New(baseURL, username, password string) (*Client, error) {
 	}, nil
 }
 
+func NewWithAPIKey(baseURL, apiKey string) (*Client, error) {
+	client, err := New(baseURL, "", "")
+	if err != nil {
+		return nil, err
+	}
+	client.apiKey = strings.TrimSpace(apiKey)
+	return client, nil
+}
+
 func (c *Client) do(ctx context.Context, method, path string, form url.Values) ([]byte, int, error) {
 	var body io.Reader
 	if form != nil {
@@ -43,6 +55,9 @@ func (c *Client) do(ctx context.Context, method, path string, form url.Values) (
 	req.Header.Set("Referer", c.baseURL)
 	req.Header.Set("Origin", c.baseURL)
 	req.Header.Set("Accept", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
 	if form != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
@@ -57,6 +72,9 @@ func (c *Client) do(ctx context.Context, method, path string, form url.Values) (
 
 // Login authenticates and stores the qBittorrent session cookie.
 func (c *Client) Login(ctx context.Context) error {
+	if c.apiKey != "" {
+		return nil
+	}
 	form := url.Values{"username": {c.username}, "password": {c.password}}
 	data, code, err := c.do(ctx, http.MethodPost, "/api/v2/auth/login", form)
 	if err != nil {
@@ -91,8 +109,26 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 	return text, nil
 }
 
-// Add submits a magnet/torrent URL.
+// AddOptions mirrors the useful qBittorrent add parameters used by ANI-RSS.
+type AddOptions struct {
+	SavePath                 string
+	Category                 string
+	Tags                     string
+	ContentLayout            string
+	DownloadLimitKB          int
+	UploadLimitKB            int
+	RatioLimit               int
+	SeedingTimeLimit         int
+	InactiveSeedingTimeLimit int
+	UseDownloadPath          bool
+	Rename                   string
+}
+
 func (c *Client) Add(ctx context.Context, torrentURL, savePath, category string) error {
+	return c.AddWithOptions(ctx, torrentURL, AddOptions{SavePath: savePath, Category: category})
+}
+
+func (c *Client) AddWithOptions(ctx context.Context, torrentURL string, options AddOptions) error {
 	if strings.TrimSpace(torrentURL) == "" {
 		return fmt.Errorf("链接为空")
 	}
@@ -104,18 +140,77 @@ func (c *Client) Add(ctx context.Context, torrentURL, savePath, category string)
 		"autoTMM": {"false"},
 		"paused":  {"false"},
 	}
-	if strings.TrimSpace(savePath) != "" {
-		form.Set("savepath", strings.TrimSpace(savePath))
+	if strings.TrimSpace(options.SavePath) != "" {
+		form.Set("savepath", strings.TrimSpace(options.SavePath))
 	}
-	if strings.TrimSpace(category) != "" {
-		form.Set("category", strings.TrimSpace(category))
+	if strings.TrimSpace(options.Category) != "" {
+		form.Set("category", strings.TrimSpace(options.Category))
+	}
+	if strings.TrimSpace(options.Tags) != "" {
+		form.Set("tags", strings.TrimSpace(options.Tags))
+	}
+	if strings.TrimSpace(options.ContentLayout) != "" {
+		form.Set("contentLayout", strings.TrimSpace(options.ContentLayout))
+	}
+	if strings.TrimSpace(options.Rename) != "" {
+		form.Set("rename", strings.TrimSpace(options.Rename))
+	}
+	if options.DownloadLimitKB > 0 {
+		form.Set("dlLimit", strconv.Itoa(options.DownloadLimitKB*1024))
+	}
+	if options.UploadLimitKB > 0 {
+		form.Set("upLimit", strconv.Itoa(options.UploadLimitKB*1024))
+	}
+	if options.RatioLimit != 0 {
+		form.Set("ratioLimit", strconv.Itoa(options.RatioLimit))
+	}
+	if options.SeedingTimeLimit != 0 {
+		form.Set("seedingTimeLimit", strconv.Itoa(options.SeedingTimeLimit))
+	}
+	if options.InactiveSeedingTimeLimit != 0 {
+		form.Set("inactiveSeedingTimeLimit", strconv.Itoa(options.InactiveSeedingTimeLimit))
+	}
+	if options.UseDownloadPath {
+		form.Set("useDownloadPath", "true")
 	}
 	data, code, err := c.do(ctx, http.MethodPost, "/api/v2/torrents/add", form)
 	if err != nil {
 		return err
 	}
-	if code != http.StatusOK {
-		return fmt.Errorf("qBittorrent 返回 HTTP %d: %s", code, strings.TrimSpace(string(data)))
+	text := strings.TrimSpace(string(data))
+	if code != http.StatusOK || (text != "" && text != "Ok.") {
+		return fmt.Errorf("qBittorrent 添加失败（HTTP %d）: %s", code, text)
 	}
 	return nil
+}
+
+// Torrent is a minimal view of qBittorrent's torrents/info endpoint.
+type Torrent struct {
+	Hash     string  `json:"hash"`
+	Name     string  `json:"name"`
+	Progress float64 `json:"progress"`
+	State    string  `json:"state"`
+}
+
+// Torrents lists torrents, optionally filtered by category.
+func (c *Client) Torrents(ctx context.Context, category string) ([]Torrent, error) {
+	if err := c.Login(ctx); err != nil {
+		return nil, err
+	}
+	path := "/api/v2/torrents/info"
+	if strings.TrimSpace(category) != "" {
+		path += "?category=" + url.QueryEscape(strings.TrimSpace(category))
+	}
+	data, code, err := c.do(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if code != http.StatusOK {
+		return nil, fmt.Errorf("qBittorrent 任务列表失败（HTTP %d）: %s", code, strings.TrimSpace(string(data)))
+	}
+	var torrents []Torrent
+	if err := json.Unmarshal(data, &torrents); err != nil {
+		return nil, fmt.Errorf("解析 qBittorrent 任务列表失败: %w", err)
+	}
+	return torrents, nil
 }

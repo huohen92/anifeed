@@ -52,7 +52,7 @@ func (s *Server) startPostProcessLoop(ctx context.Context) {
 		case <-time.After(8 * time.Second):
 		}
 		s.runPostProcess()
-		ticker := time.NewTicker(20 * time.Second)
+		ticker := time.NewTicker(45 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -310,25 +310,26 @@ func processPostTask(ctx context.Context, fs postProcessFS, task *elevengo.Offli
 		}
 	}
 	if cfg.Rename.Enabled {
+		feedName := sourceFeedName(cfg, pending.ConfigName, pending.SourceURL)
 		tmdbID := ""
-		if feed, ok := findFeedConfig(cfg, pending.ConfigName, ""); ok {
+		if feed, ok := findFeedConfig(cfg, feedName, ""); ok {
 			tmdbID = strings.TrimSpace(feed.TmdbID)
 		}
-		season := renameSeasonForFeedTitle(cfg, pending.ConfigName, "", pending.Title)
-		offset := renameOffsetForFeedConfig(cfg, pending.ConfigName)
+		season := renameSeasonForFeedTitle(cfg, feedName, "", pending.Title)
+		offset := renameOffsetForFeedConfig(cfg, feedName)
 		if pending.RenameSeason > 0 {
 			season = pending.RenameSeason
 		}
 		if pending.RenameSeason > 0 || pending.RenameOffset != 0 {
 			offset = pending.RenameOffset
 		}
-		newName, buildErr := p115.BuildRenameName(pending.ConfigName, pending.Title, p115.RenameOptions{
+		newName, buildErr := p115.BuildRenameName(feedName, pending.Title, p115.RenameOptions{
 			Enabled:  true,
 			Template: cfg.Rename.Template,
 			Season:   season,
 			Offset:   offset,
 			TmdbID:   tmdbID,
-			Subgroup: sourceSubgroupName(cfg, pending.ConfigName, pending.SourceURL, pending.Title),
+			Subgroup: sourceSubgroupName(cfg, feedName, pending.SourceURL, pending.Title),
 		})
 		if buildErr != nil {
 			return nil, fmt.Errorf("生成重命名失败: %w", buildErr)

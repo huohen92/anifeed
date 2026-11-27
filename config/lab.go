@@ -15,6 +15,7 @@ type LabConfig struct {
 	AutoBackupSubgroup   bool
 	AutoBackupFailures   int
 	AutoBackupSkipOffset bool
+	AutoBackupIdle       bool
 	AutoOffset           bool
 	AutoOffsetSamples    int
 	AutoApplyRules       bool

@@ -7,7 +7,10 @@ import (
 	"crypto/subtle"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -169,6 +172,68 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 	})
 }
 
+func authSessionKey(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *Server) authSessionsPath() string {
+	if s.configPath == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(s.configPath), ".auth-sessions.json")
+}
+
+func (s *Server) loadAuthSessions() {
+	path := s.authSessionsPath()
+	if path == "" {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var saved map[string]authSession
+	if json.Unmarshal(data, &saved) != nil {
+		return
+	}
+	now := time.Now()
+	for key, session := range saved {
+		if now.Before(session.ExpiresAt) {
+			s.authSessions[key] = session
+		}
+	}
+}
+
+func (s *Server) persistAuthSessionsLocked() {
+	path := s.authSessionsPath()
+	if path == "" {
+		return
+	}
+	data, err := json.MarshalIndent(s.authSessions, "", "  ")
+	if err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".auth-sessions-*.tmp")
+	if err != nil {
+		return
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		return
+	}
+	_ = os.Rename(name, path)
+}
+
 func (s *Server) authSessionValid(r *http.Request) bool {
 	cookie, err := r.Cookie(authCookieName)
 	if err != nil || cookie.Value == "" {
@@ -176,12 +241,21 @@ func (s *Server) authSessionValid(r *http.Request) bool {
 	}
 	s.authMu.Lock()
 	defer s.authMu.Unlock()
-	session, ok := s.authSessions[cookie.Value]
+	session, ok := s.authSessions[authSessionKey(cookie.Value)]
 	if !ok || time.Now().After(session.ExpiresAt) {
-		delete(s.authSessions, cookie.Value)
+		delete(s.authSessions, authSessionKey(cookie.Value))
+		s.persistAuthSessionsLocked()
 		return false
 	}
 	return true
+}
+
+func requestIsHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	proto := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
+	return strings.EqualFold(proto, "https")
 }
 
 func (s *Server) createAuthSession(w http.ResponseWriter, r *http.Request, username string) {
@@ -194,26 +268,35 @@ func (s *Server) createAuthSession(w http.ResponseWriter, r *http.Request, usern
 			delete(s.authSessions, key)
 		}
 	}
-	s.authSessions[token] = authSession{Username: username, ExpiresAt: time.Now().Add(authSessionTTL)}
+	s.authSessions[authSessionKey(token)] = authSession{Username: username, ExpiresAt: time.Now().Add(authSessionTTL)}
+	s.persistAuthSessionsLocked()
 	s.authMu.Unlock()
 	http.SetCookie(w, &http.Cookie{
 		Name:     authCookieName,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   r.TLS != nil,
+		Secure:   requestIsHTTPS(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(authSessionTTL.Seconds()),
 	})
 }
 
+func (s *Server) clearAllAuthSessions() {
+	s.authMu.Lock()
+	s.authSessions = make(map[string]authSession)
+	s.persistAuthSessionsLocked()
+	s.authMu.Unlock()
+}
+
 func (s *Server) clearAuthSession(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(authCookieName); err == nil {
 		s.authMu.Lock()
-		delete(s.authSessions, cookie.Value)
+		delete(s.authSessions, authSessionKey(cookie.Value))
+		s.persistAuthSessionsLocked()
 		s.authMu.Unlock()
 	}
-	http.SetCookie(w, &http.Cookie{Name: authCookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	http.SetCookie(w, &http.Cookie{Name: authCookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: requestIsHTTPS(r), SameSite: http.SameSiteLaxMode})
 }
 
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {

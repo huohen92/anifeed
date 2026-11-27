@@ -34,7 +34,7 @@ func TestWeComNotificationPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.MsgType != "text" || !strings.Contains(got.Text.Content, "AniFeed 测试通知") || !strings.Contains(got.Text.Content, "提交到 115：1") {
+	if got.MsgType != "text" || !strings.Contains(got.Text.Content, "AniFeed 测试通知") || !strings.Contains(got.Text.Content, "提交 1") {
 		t.Fatalf("payload = %+v", got)
 	}
 }
@@ -68,7 +68,7 @@ func TestNotificationContentSelection(t *testing.T) {
 	text = notificationText(config.NotifyConfig{Content: []string{"details", "time"}}, payload)
 	parsed, _ := time.Parse(time.RFC3339, payload.Timestamp)
 	wantTime := parsed.Local().Format("2006-01-02 15:04")
-	if !strings.Contains(text, "订阅更新") || !strings.Contains(text, "番剧") || !strings.Contains(text, "番剧 - 01") || !strings.Contains(text, "时间："+wantTime) {
+	if !strings.Contains(text, "更新：") || !strings.Contains(text, "番剧") || !strings.Contains(text, "番剧 - 01") || !strings.Contains(text, "时间："+wantTime) {
 		t.Fatalf("details text = %q", text)
 	}
 }
@@ -76,7 +76,7 @@ func TestNotificationContentSelection(t *testing.T) {
 func TestNotificationIdleReminder(t *testing.T) {
 	payload := notifyPayload{Title: "AniFeed 摸鱼提示", Status: "success", IdleDays: 7, IdleFeeds: []string{"青之箱（最后更新：2026-10-01）"}}
 	text := notificationText(config.NotifyConfig{Content: []string{"summary"}}, payload)
-	if !strings.Contains(text, "超过 7 天没有更新") || !strings.Contains(text, "青之箱") {
+	if !strings.Contains(text, "超过 7 天未更新") || !strings.Contains(text, "青之箱") {
 		t.Fatalf("idle text = %q", text)
 	}
 }
@@ -157,12 +157,30 @@ func TestNotificationErrorShowsURLAndReason(t *testing.T) {
 		Error: `get rss from https://anibt.net/rss/anime.xml: Get "https://anibt.net/rss/anime.xml": dial tcp4: lookup anibt.net on 127.0.0.11:53: no such host`,
 	}}}
 	text := notificationText(config.NotifyConfig{Content: []string{"errors"}}, payload)
-	for _, want := range []string{"RSS: https://anibt.net/rss/anime.xml?bgmId=548156", "原因：域名解析失败，无法解析 anibt.net"} {
+	for _, want := range []string{"青之箱：域名解析失败，无法解析 anibt.net"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in:\n%s", want, text)
 		}
 	}
 	if strings.Contains(text, "dial tcp4") {
 		t.Fatalf("raw error leaked:\n%s", text)
+	}
+}
+
+func TestAddedNotificationsBatch(t *testing.T) {
+	var count int
+	var content string
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count++
+		body, _ := io.ReadAll(r.Body)
+		content = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhook.Close()
+	s, _ := newTestServerWith(t, nil)
+	cfg := &config.Config{Notify: config.NotifyConfig{Webhook: webhook.URL, Type: "generic", OnSuccess: true}}
+	s.sendAddedNotifications(cfg, []p115.FeedRunResult{{Name: "番剧", AddedTitles: []string{"番剧 - 01", "番剧 - 02"}}})
+	if count != 1 || !strings.Contains(content, "AniFeed 新增 2 集") || !strings.Contains(content, "番剧 - 01") || !strings.Contains(content, "番剧 - 02") {
+		t.Fatalf("requests = %d content = %s", count, content)
 	}
 }

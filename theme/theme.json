@@ -5,6 +5,6 @@
   },
   "mobile": {
     "mode": "single",
-    "selected": ""
+    "selected": "builtin-mobile-1"
   }
 }

@@ -111,6 +111,11 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 	writeKV(&b, "retry", strconv.Itoa(cfg.Offline.Retry))
 	writeKV(&b, "auto_clear_completed", strconv.FormatBool(cfg.Offline.AutoClearCompleted))
 	writeKV(&b, "auto_disable_completed", strconv.FormatBool(cfg.Offline.AutoDisableCompleted))
+	historyDays := cfg.Offline.HistoryRetentionDays
+	if historyDays <= 0 {
+		historyDays = 365
+	}
+	writeKV(&b, "history_retention_days", strconv.Itoa(historyDays))
 	writeKV(&b, "dual_folder", strconv.FormatBool(cfg.Offline.DualFolder))
 	writeKV(&b, "final_cid", quote(cfg.Offline.FinalCid))
 	finalMode := cfg.Offline.FinalMode
@@ -131,6 +136,9 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 	writeKV(&b, "auto_subtitle", stringArray(orDefault(cfg.Offline.AutoSubtitle, subtitle)))
 	writeKV(&b, "auto_container", stringArray(orDefault(cfg.Offline.AutoContainer, container)))
 	writeKV(&b, "auto_resolution", stringArray(orDefault(cfg.Offline.AutoResolution, resolution)))
+	if len(cfg.Offline.AutoCustom) > 0 {
+		writeKV(&b, "auto_custom", stringArray(cfg.Offline.AutoCustom))
+	}
 	writeKV(&b, "auto_rules", strconv.FormatBool(cfg.Offline.AutoRules))
 	b.WriteString("\n")
 
@@ -145,6 +153,15 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 	writeKV(&b, "url", quote(cfg.Downloader.QBittorrent.URL))
 	writeKV(&b, "username", quote(cfg.Downloader.QBittorrent.Username))
 	writeKV(&b, "password", quote(cfg.Downloader.QBittorrent.Password))
+	writeKV(&b, "api_key", quote(cfg.Downloader.QBittorrent.APIKey))
+	writeKV(&b, "tags", quote(cfg.Downloader.QBittorrent.Tags))
+	writeKV(&b, "content_layout", quote(cfg.Downloader.QBittorrent.ContentLayout))
+	writeKV(&b, "download_limit_kb", strconv.Itoa(cfg.Downloader.QBittorrent.DownloadLimitKB))
+	writeKV(&b, "upload_limit_kb", strconv.Itoa(cfg.Downloader.QBittorrent.UploadLimitKB))
+	writeKV(&b, "ratio_limit", strconv.Itoa(cfg.Downloader.QBittorrent.RatioLimit))
+	writeKV(&b, "seeding_time_limit", strconv.Itoa(cfg.Downloader.QBittorrent.SeedingTimeLimit))
+	writeKV(&b, "inactive_seeding_time_limit", strconv.Itoa(cfg.Downloader.QBittorrent.InactiveSeedingTimeLimit))
+	writeKV(&b, "use_download_path", strconv.FormatBool(cfg.Downloader.QBittorrent.UseDownloadPath))
 	writeKV(&b, "save_path", quote(cfg.Downloader.QBittorrent.SavePath))
 	writeKV(&b, "category", quote(cfg.Downloader.QBittorrent.Category))
 	writeKV(&b, "fallback_threshold", strconv.Itoa(cfg.Downloader.QBittorrent.FallbackThreshold))
@@ -274,6 +291,7 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 	}
 	writeKV(&b, "auto_backup_failures", strconv.Itoa(failures))
 	writeKV(&b, "auto_backup_skip_offset", strconv.FormatBool(cfg.Lab.AutoBackupSkipOffset))
+	writeKV(&b, "auto_backup_idle", strconv.FormatBool(cfg.Lab.AutoBackupIdle))
 	writeKV(&b, "auto_offset", strconv.FormatBool(cfg.Lab.AutoOffset))
 	samples := cfg.Lab.AutoOffsetSamples
 	if samples <= 0 {
@@ -330,6 +348,9 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 		}
 		if rss.Completed {
 			writeKV(&b, "completed", "true")
+		}
+		if rss.AutoDisable {
+			writeKV(&b, "auto_disable", "true")
 		}
 		if strings.TrimSpace(rss.FinalCid) != "" {
 			writeKV(&b, "final_cid", quote(rss.FinalCid))

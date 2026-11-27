@@ -36,6 +36,10 @@ func (s *Server) sendAddedNotifications(cfg *config.Config, results []p115.FeedR
 		return
 	}
 	for _, result := range results {
+		if len(result.AddedTitles) > 1 {
+			s.sendAddedBatch(cfg, result.Name, result.URL, result.AddedTitles)
+			continue
+		}
 		var feed *config.RssConfig
 		if found, ok := findFeedConfig(cfg, result.Name, result.URL); ok {
 			feed = &found
@@ -379,7 +383,16 @@ func renderNotifyTemplate(template string, fields map[string]string) string {
 	for key, value := range fields {
 		template = strings.ReplaceAll(template, "${"+key+"}", value)
 	}
-	return strings.TrimSpace(template)
+	lines := strings.Split(template, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasSuffix(trimmed, ":") || strings.HasSuffix(trimmed, "：") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
 }
 
 func postRawNotification(cfg config.NotifyConfig, text string) error {
@@ -394,4 +407,29 @@ func postRawNotification(cfg config.NotifyConfig, text string) error {
 
 func logNotifyError(err error) {
 	log.Printf("[warning] 条目通知发送失败: %v", err)
+}
+
+// sendAddedBatch sends one compact notification for a feed that added several
+// episodes in the same run, instead of one webhook request per episode.
+func (s *Server) sendAddedBatch(cfg *config.Config, feedName, feedURL string, titles []string) {
+	if cfg == nil || cfg.Notify.Webhook == "" || !cfg.Notify.OnSuccess || !notifyEventEnabled(cfg.Notify, "added") {
+		return
+	}
+	lines := []string{fmt.Sprintf("AniFeed 新增 %d 集", len(titles)), "订阅：" + feedName}
+	for _, title := range titles {
+		title = strings.TrimSpace(title)
+		if title == "" {
+			continue
+		}
+		if len([]rune(title)) > 80 {
+			title = string([]rune(title)[:80]) + "…"
+		}
+		lines = append(lines, "· "+title)
+	}
+	if len(lines) <= 2 {
+		return
+	}
+	if err := postRawNotification(cfg.Notify, strings.Join(lines, "\n")); err != nil {
+		logNotifyError(err)
+	}
 }

@@ -308,6 +308,7 @@ func (ag *Agent) RunRssConfigGroup(config *rsssite.RssConfig) []FeedRunResult {
 		copy.Subgroups = nil
 		copy.Filter = subgroup.Filter
 		copy.Exclude = subgroup.Exclude
+		copy.SubgroupName = strings.TrimSpace(subgroup.Name)
 		copy.StartEpisode = subgroup.StartEpisode
 		if subgroup.Season > 0 {
 			copy.RenameSeason = subgroup.Season

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dlclark/regexp2"
+	"github.com/huohen92/anifeed/ruleengine"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -59,7 +59,9 @@ type TOMLOfflineConfig struct {
 	AutoSubtitle         []string `toml:"auto_subtitle"`
 	AutoContainer        []string `toml:"auto_container"`
 	AutoResolution       []string `toml:"auto_resolution"`
+	AutoCustom           []string `toml:"auto_custom"`
 	AutoRules            bool     `toml:"auto_rules"`
+	HistoryRetentionDays int      `toml:"history_retention_days"`
 }
 
 // TOMLDownloadersConfig holds downloader settings.
@@ -69,17 +71,26 @@ type TOMLDownloadersConfig struct {
 }
 
 type TOMLDownloaderConfig struct {
-	Enabled           bool   `toml:"enabled"`
-	OfflineCid        string `toml:"offline_cid"`
-	SavePath          string `toml:"save_path"`
-	OfflineParentID   string `toml:"offline_parent_id"`
-	FallbackThreshold int    `toml:"fallback_threshold"`
-	DailyLimit        int    `toml:"daily_limit"`
-	HighSpeedMB       int    `toml:"high_speed_mb"`
-	URL               string `toml:"url"`
-	Username          string `toml:"username"`
-	Password          string `toml:"password"`
-	Category          string `toml:"category"`
+	Enabled                  bool   `toml:"enabled"`
+	OfflineCid               string `toml:"offline_cid"`
+	SavePath                 string `toml:"save_path"`
+	OfflineParentID          string `toml:"offline_parent_id"`
+	FallbackThreshold        int    `toml:"fallback_threshold"`
+	DailyLimit               int    `toml:"daily_limit"`
+	HighSpeedMB              int    `toml:"high_speed_mb"`
+	URL                      string `toml:"url"`
+	Username                 string `toml:"username"`
+	Password                 string `toml:"password"`
+	APIKey                   string `toml:"api_key"`
+	Category                 string `toml:"category"`
+	Tags                     string `toml:"tags"`
+	ContentLayout            string `toml:"content_layout"`
+	DownloadLimitKB          int    `toml:"download_limit_kb"`
+	UploadLimitKB            int    `toml:"upload_limit_kb"`
+	RatioLimit               int    `toml:"ratio_limit"`
+	SeedingTimeLimit         int    `toml:"seeding_time_limit"`
+	InactiveSeedingTimeLimit int    `toml:"inactive_seeding_time_limit"`
+	UseDownloadPath          bool   `toml:"use_download_path"`
 }
 
 // TOMLAIConfig holds the optional AI assistant settings.
@@ -206,6 +217,7 @@ type TOMLRSSConfig struct {
 	UpdateWeekday   int               `toml:"update_weekday"` // Optional: 1=Monday ... 7=Sunday
 	TotalEpisodes   int               `toml:"total_episodes"` // Optional: total episodes for completion
 	Completed       bool              `toml:"completed"`
+	AutoDisable     bool              `toml:"auto_disable"`
 	FinalCid        string            `toml:"final_cid"`
 	FinalMode       int               `toml:"final_mode"`
 	FinalCustomMode int               `toml:"final_custom_mode"`
@@ -404,18 +416,23 @@ func validateTOMLConfig(cfg *TOMLConfig, path string) error {
 		if err := validateFilterRule(rss.Exclude, fmt.Sprintf("RSS entry %d exclude", i)); err != nil {
 			return err
 		}
+		for j, group := range rss.Subgroups {
+			if err := validateFilterRule(group.Filter, fmt.Sprintf("RSS entry %d subgroup %d filter", i, j)); err != nil {
+				return err
+			}
+			if err := validateFilterRule(group.Exclude, fmt.Sprintf("RSS entry %d subgroup %d exclude", i, j)); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
 }
 
-// validateFilterRule ensures a /regex/ filter rule is compilable.
+// validateFilterRule validates every line with the same parser used at runtime.
 func validateFilterRule(rule, field string) error {
-	if !strings.HasPrefix(rule, "/") || !strings.HasSuffix(rule, "/") || len(rule) <= 2 {
-		return nil
-	}
-	if _, err := regexp2.Compile(rule[1:len(rule)-1], 0); err != nil {
-		return fmt.Errorf("%s has invalid regular expression %q: %w", field, rule, err)
+	if _, err := ruleengine.Parse(rule); err != nil {
+		return fmt.Errorf("%s has invalid rule: %w", field, err)
 	}
 	return nil
 }
@@ -448,6 +465,7 @@ func TransformTOMLRSS(tomlRSS []TOMLRSSConfig) map[string][]RssConfig {
 			UpdateWeekday:   tr.UpdateWeekday,
 			TotalEpisodes:   tr.TotalEpisodes,
 			Completed:       tr.Completed,
+			AutoDisable:     tr.AutoDisable,
 			FinalCid:        tr.FinalCid,
 			FinalMode:       tr.FinalMode,
 			FinalCustomMode: tr.FinalCustomMode,
@@ -556,6 +574,7 @@ type TOMLLabConfig struct {
 	AutoBackupSubgroup   bool     `toml:"auto_backup_subgroup"`
 	AutoBackupFailures   int      `toml:"auto_backup_failures"`
 	AutoBackupSkipOffset bool     `toml:"auto_backup_skip_offset"`
+	AutoBackupIdle       bool     `toml:"auto_backup_idle"`
 	AutoOffset           bool     `toml:"auto_offset"`
 	AutoOffsetSamples    int      `toml:"auto_offset_samples"`
 	AutoApplyRules       bool     `toml:"auto_apply_rules"`
