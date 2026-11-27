@@ -1082,3 +1082,11 @@ body.hide-hints .switch-desc { display: block !important; opacity: 0; }
 }
 
 .poster-preview img { transition: opacity .4s ease; }
+
+/* Subscription posters keep the full image; only the bottom caption keeps its
+ * gradient. Disabled feeds must not dim the artwork itself. */
+.feed-manage-card.disabled .anime-poster > .poster-image,
+.feed-manage-card.disabled .anime-poster > img {
+  filter: none;
+  opacity: 1;
+}
