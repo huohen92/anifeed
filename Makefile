@@ -1,6 +1,6 @@
 GO ?= go
 BIN ?= bin/anifeed
-VERSION ?= 0.03.11
+VERSION ?= 0.03.12
 LDFLAGS := -s -w -X github.com/huohen92/anifeed/version.Version=$(VERSION)
 
 .PHONY: all build web web-version run test check fmt vet docker-build docker-up clean
