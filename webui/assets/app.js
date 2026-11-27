@@ -829,7 +829,6 @@ async function loadDashboard() {
   const dataJobs = [
     api('/api/history?limit=200').then(data => { state.history = data.items || []; if (state.history.length) state.historyLoaded = true; }).catch(err => console.debug('[AniFeed]', err)),
     api('/api/logs?limit=12').then(data => { state.logs = data.lines || []; }).catch(err => console.debug('[AniFeed]', err)),
-    api('/api/tasks?limit=200').then(data => { state.tasks = data.tasks || []; state.tasksLoaded = true; }).catch(() => { state.tasks = []; }),
   ];
   Promise.allSettled(dataJobs).then(() => {
     if (state.routeEpoch !== epoch || state.route !== 'dashboard') return;
@@ -850,18 +849,10 @@ function scheduleLoginPoll() {
   }, 2200);
 }
 
-function dashboardStats() {
-  const tasks = state.tasks || [];
-  const running = tasks.filter(t => t.state === 'running').length;
-  const done = tasks.filter(t => t.state === 'done').length;
-  const failed = tasks.filter(t => t.state === 'failed').length;
-  return { running, done, failed };
-}
 
 function renderDashboard() {
   const status = state.status;
   if (!status) return;
-  const stats = dashboardStats();
   const loginOk = status.login_state === 'ok';
   const checking = ['checking', 'unknown'].includes(status.login_state);
   const user = status.user;
@@ -891,28 +882,21 @@ function renderDashboard() {
     banners.push(`<div class="banner warn">${icon('alert')}<span>数据库读取异常：${esc(status.database_error)}</span></div>`);
   }
 
-  const recent = (state.tasks || []).slice(0, 6);
-  let recentTitle = '最近任务';
-  let recentSub = '来自 115 的最新离线下载';
+  const recent = (state.history || []).slice(0, 6);
+  const recentTitle = '最近提交';
+  const recentSub = '来自本地历史记录，不请求 115';
   let recentHtml;
   if (recent.length) {
     recentHtml = `<div class="table-wrap"><table class="table recent-table">
-      <thead><tr><th>任务</th><th>大小</th><th>状态</th><th>进度</th></tr></thead>
-      <tbody>${recent.map(taskRowCompact).join('')}</tbody>
-    </table></div>`;
-  } else if ((state.history || []).length) {
-    recentTitle = '最近提交';
-    recentSub = '本地历史记录（登录 115 后可查看云端任务）';
-    recentHtml = `<div class="table-wrap"><table class="table recent-table">
       <thead><tr><th>标题</th><th class="hide-sm">订阅</th><th class="hide-sm">时间</th></tr></thead>
-      <tbody>${state.history.slice(0, 6).map(item => `<tr>
+      <tbody>${recent.map(item => `<tr>
         <td class="name-cell" data-label="标题"><div class="title" title="${esc(item.title)}">${esc(item.title || '—')}</div><div class="meta">${esc(item.task_hash || '')}</div></td>
         <td class="hide-sm" data-label="订阅"><span class="badge badge-info">${esc(item.config_name || '未命名')}</span></td>
         <td class="numeric nowrap hide-sm" data-label="时间">${fmtDate(item.created_at)}</td>
       </tr>`).join('')}</tbody>
     </table></div>`;
   } else {
-    recentHtml = emptyBlock('cloud', '还没有离线任务', '运行订阅或手动添加磁力链接后，任务会显示在这里。');
+    recentHtml = emptyBlock('history', '还没有提交记录', '运行订阅成功后，提交记录会显示在这里。');
   }
 
   const allFeeds = state.config && state.config.rss ? state.config.rss : [];
@@ -958,19 +942,19 @@ function renderDashboard() {
         </div>
       </div>
       <div class="card stat amber">
-        <span class="stat-icon">${icon('cloud')}</span>
+        <span class="stat-icon">${icon('history')}</span>
         <div class="stat-copy">
-          <div class="stat-top">云端任务</div>
-          <div class="stat-value">${state.tasks.length}</div>
-          <div class="stat-foot">${stats.running} 个运行中 · ${stats.done} 个已完成</div>
+          <div class="stat-top">历史提交</div>
+          <div class="stat-value">${status.history_count}</div>
+          <div class="stat-foot">本地记录 · 今天 ${status.today_count} 条</div>
         </div>
       </div>
       <div class="card stat cyan">
         <span class="stat-icon">${icon('clock')}</span>
         <div class="stat-copy">
-          <div class="stat-top">提交成功率</div>
-          <div class="stat-value">${state.tasks.length ? Math.round((stats.done / Math.max(1, state.tasks.length)) * 100) + '%' : '—'}</div>
-          <div class="stat-foot">${stats.failed} 个失败任务</div>
+          <div class="stat-top">自动运行</div>
+          <div class="stat-value">${status.auto_enabled ? status.auto_interval_minutes + ' 分钟' : '未开启'}</div>
+          <div class="stat-foot">${recent.length ? '最近提交 ' + fmtDate(recent[0].created_at) : '暂无提交记录'}</div>
         </div>
       </div>
     </section>
@@ -986,7 +970,7 @@ function renderDashboard() {
     <section class="card">
       <div class="card-head">
         <div><h3>${recentTitle}</h3><div class="sub">${recentSub}</div></div>
-        <div class="right"><a class="btn btn-sm btn-ghost" href="${recent.length ? '#/tasks' : '#/history'}">查看全部 ${icon('arrow')}</a></div>
+        <div class="right"><a class="btn btn-sm btn-ghost" href="#/history">查看全部 ${icon('arrow')}</a></div>
       </div>
       ${recentHtml}
     </section>`;
