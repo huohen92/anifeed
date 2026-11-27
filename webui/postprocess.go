@@ -219,6 +219,7 @@ func (s *Server) runPostProcess() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	s.observeQBFallback(ctx, cfg, tasks)
 	for _, item := range pending {
 		task, ok := byHash[item.TaskHash]
 		if !ok {

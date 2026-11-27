@@ -41,6 +41,9 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadGateway, "获取 115 任务失败: "+err.Error())
 		return
 	}
+	if cfg := s.configSnapshot(); cfg != nil {
+		s.observeQBFallback(r.Context(), cfg, tasks)
+	}
 	resp := tasksResponse{Tasks: make([]taskView, 0, len(tasks)), Total: len(tasks)}
 	for i := range tasks {
 		t := &tasks[i]

@@ -76,23 +76,26 @@ type Server struct {
 	lastScheduledWash    time.Time
 	washScheduledRunning bool
 
-	logBuf          *LogBuffer
-	prevLog         io.Writer
-	authMu          sync.Mutex
-	authSessions    map[string]authSession
-	logMu           sync.Mutex
-	jobs            *jobManager
-	postProcessMu   sync.Mutex
-	backupMu        sync.Mutex
-	autoBackupMu    sync.Mutex
-	backupFailures  map[string]int
-	backupTriggered map[string]bool
-	idleBackupDay   map[string]string
-	aiMu            sync.Mutex
-	aiPending       map[string]aiPendingAction
-	startedAt       time.Time
-	httpSrv         *http.Server
-	versionText     string
+	logBuf             *LogBuffer
+	prevLog            io.Writer
+	authMu             sync.Mutex
+	authSessions       map[string]authSession
+	logMu              sync.Mutex
+	jobs               *jobManager
+	postProcessMu      sync.Mutex
+	backupMu           sync.Mutex
+	autoBackupMu       sync.Mutex
+	backupFailures     map[string]int
+	backupTriggered    map[string]bool
+	idleBackupDay      map[string]string
+	qbFallbackMu       sync.Mutex
+	qbFallbackFailures map[string]int
+	qbFallbackStarted  map[string]bool
+	aiMu               sync.Mutex
+	aiPending          map[string]aiPendingAction
+	startedAt          time.Time
+	httpSrv            *http.Server
+	versionText        string
 }
 
 // New creates a Web UI server from a loaded configuration.
@@ -242,7 +245,6 @@ func (s *Server) Start(ctx context.Context) error {
 	go s.startPostProcessLoop(ctx)
 	go s.startHourlyNotifyLoop(ctx)
 	go s.startWashScheduleLoop(ctx)
-	go s.startQBFallbackLoop(ctx)
 	go func() {
 		s.cleanupOrphanPosters()
 		ag, err := s.ensureAgent()
