@@ -1060,21 +1060,25 @@ body.hide-hints .switch-desc { display: block !important; opacity: 0; }
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
     white-space: nowrap;
-    font-size: 7px;
-    line-height: 1.35;
+    font-size: 6.2px;
+    line-height: 1.25;
     opacity: .9;
   }
   .feed-card-meta::-webkit-scrollbar { display: none; }
   .feed-card-meta span { flex: 0 0 auto; }
-  .feed-card-meta span:nth-child(3) { max-width: 38px; overflow: hidden; text-overflow: ellipsis; }
+  .feed-card-meta span:nth-child(3) { max-width: 22px; overflow: hidden; text-overflow: ellipsis; }
   .feed-card-meta span + span::before {
     content: "·";
-    margin: 0 1.5px;
+    margin: 0 1px;
     color: color-mix(in srgb, var(--text) 45%, transparent);
   }
 }
 
 /* Two columns leave enough width for the six metadata fields on phones. */
 @media (max-width: 860px) {
-  .feed-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .feed-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (min-width: 861px) {
+  .feed-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 160px)); justify-content: start; }
 }

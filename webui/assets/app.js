@@ -1443,6 +1443,7 @@ function feedCard(feed, index, completed = false) {
   const progress = feedProgress(feed);
   const totalText = progress.total || '*';
   const subgroup = subgroupLabel(feed.subgroup_name || urlSubgroupName(feed.url), feed.name);
+  const quarter = quarterOf(feed) || '—';
   return `<article class="anime-card feed-manage-card ${disabled ? 'disabled' : ''}" title="${esc(feed.name)}">
     <div class="anime-poster ${cachedCover && cachedCover.cover ? 'has-image' : ''}" data-feed-cover data-feed-poster data-index="${index}" data-source="${source.key}" title="点击编辑订阅">
       <span class="poster-fallback"><img src="/logo.webp" alt="AniFeed"></span>
@@ -1452,8 +1453,8 @@ function feedCard(feed, index, completed = false) {
         <h4>${esc(feed.name || '未命名订阅')}</h4>
         <div>第 ${Number(feed.rename_season) || 1} 季${subgroup ? ` · ${esc(subgroup)}` : ''}</div>
         <div class="feed-cover-progress">主 ${progress.mainDone} · 合计 ${progress.allDone}/${totalText}</div>
-        <div class="feed-card-meta" title="季 ${Number(feed.rename_season) || 1} · 播出 ${esc(quarterOf(feed) || '—')} · ${esc(subgroup || '—')} · ${completed ? '已完成' : disabled ? '未启用' : '已启用'} · ${progress.allDone}/${totalText} · ${esc(feed.tmdb_type || 'tv')}">
-          <span>S${Number(feed.rename_season) || 1}</span><span>${esc(quarterOf(feed) || '—')}</span><span>${esc(subgroup || '—')}</span><span>${completed ? '已完成' : disabled ? '未启用' : '已启用'}</span><span>${progress.allDone}/${totalText}</span><span>${esc(feed.tmdb_type || 'tv')}</span>
+        <div class="feed-card-meta" title="季 ${Number(feed.rename_season) || 1} · 播出 ${esc(quarter)} · ${esc(subgroup || '—')} · ${completed ? '已完成' : disabled ? '未启用' : '已启用'} · ${progress.allDone}/${totalText} · ${esc(feed.tmdb_type || 'tv')}">
+          <span>S${Number(feed.rename_season) || 1}</span><span>${esc(quarter.replace(/^20/, ''))}</span><span>${esc(subgroup || '—')}</span><span>${completed ? '完成' : disabled ? '停用' : '启用'}</span><span>${progress.allDone}/${totalText}</span><span>${esc(feed.tmdb_type || 'tv')}</span>
         </div>
       </div>
       <button class="poster-action poster-action-left" type="button" data-poster-action="poster" title="修改海报">${icon('image')}</button>

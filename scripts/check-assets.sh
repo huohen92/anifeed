@@ -2,7 +2,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-VERSION="${VERSION:-0.03.12}"
+VERSION="${VERSION:-0.03.13}"
 if ! grep -q "?v=${VERSION}\\." webui/assets/index.html; then
   echo "index.html is not using a ${VERSION}.* asset version" >&2
   exit 1
