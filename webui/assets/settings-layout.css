@@ -1090,3 +1090,9 @@ body.hide-hints .switch-desc { display: block !important; opacity: 0; }
   filter: none;
   opacity: 1;
 }
+
+/* Override the older disabled-feed opacity rule (higher specificity). */
+.feed-manage-card.disabled .anime-poster.has-image > .poster-image {
+  opacity: 1 !important;
+  filter: none !important;
+}

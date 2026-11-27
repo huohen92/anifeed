@@ -1,5 +1,5 @@
 appname=anifeed
-version=0.3.17
+version=0.3.18
 display_name=AniFeed
 desc=自托管动漫 RSS 自动离线到 115 网盘。安装后打开应用，先创建 Web UI 登录账号，再填写 115 Cookies。
 source=thirdparty
@@ -13,4 +13,4 @@ desktop_applaunchname=anifeed.main
 service_port=8115
 checkport=true
 ctl_stop=true
-changelog=0.03.17：订阅海报取消整图遮罩，仅保留底部渐变。
+changelog=0.03.18：修复禁用订阅海报透明度导致的白/黑遮罩。
