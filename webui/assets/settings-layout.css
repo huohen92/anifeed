@@ -1050,35 +1050,33 @@ body.hide-hints .switch-desc { display: block !important; opacity: 0; }
 @media (max-width: 860px) {
   .feed-cover-overlay > div:not(.feed-card-meta) { display: none; }
   .feed-card-meta {
-    display: flex;
-    flex-wrap: nowrap;
+    display: grid;
+    grid-template-columns: repeat(3, max-content);
+    column-gap: 4px;
+    row-gap: 1px;
     align-items: center;
-    gap: 0;
     margin-top: 3px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
     white-space: nowrap;
-    font-size: 6.2px;
-    line-height: 1.25;
+    font-size: 6.8px;
+    line-height: 1.3;
     opacity: .9;
   }
-  .feed-card-meta::-webkit-scrollbar { display: none; }
   .feed-card-meta span { flex: 0 0 auto; }
-  .feed-card-meta span:nth-child(3) { max-width: 22px; overflow: hidden; text-overflow: ellipsis; }
-  .feed-card-meta span + span::before {
-    content: "·";
-    margin: 0 1px;
-    color: color-mix(in srgb, var(--text) 45%, transparent);
-  }
+  .feed-card-meta span:nth-child(3) { max-width: 42px; overflow: hidden; text-overflow: ellipsis; }
+  .feed-card-meta span + span::before { content: none; }
 }
 
-/* Two columns leave enough width for the six metadata fields on phones. */
+/* Three columns restore distinct feed-poster size for the six metadata fields on phones. */
 @media (max-width: 860px) {
   .feed-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (min-width: 861px) {
   .feed-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 160px)); justify-content: start; }
+}
+
+@media (max-width: 860px) {
+  .feed-manage-card .poster-action-left { top: 5px; right: 5px; bottom: auto; left: auto; }
+  .feed-manage-card .poster-action-right { display: none; }
 }

@@ -1,5 +1,5 @@
 appname=anifeed-native
-version=0.3.13
+version=0.3.14
 display_name=AniFeed
 desc=自托管动漫 RSS 自动离线到 115 网盘。原生版，不需要 Docker。
 source=thirdparty
@@ -13,4 +13,4 @@ desktop_applaunchname=anifeed-native.main
 service_port=8115
 checkport=true
 ctl_stop=true
-changelog=0.03.13：修复 PC 重复 AI 入口，恢复订阅海报尺寸层级。
+changelog=0.03.14：优化订阅海报角标与两行信息。
