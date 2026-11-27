@@ -1096,3 +1096,14 @@ body.hide-hints .switch-desc { display: block !important; opacity: 0; }
   opacity: 1 !important;
   filter: none !important;
 }
+
+/* Disabled feed artwork gets a stable dark veil from the very first paint.
+ * The class is rendered server-side, so switching pages never animates it in. */
+.feed-manage-card.disabled .anime-poster::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: rgba(0, 0, 0, .42);
+}

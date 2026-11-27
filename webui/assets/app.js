@@ -163,6 +163,7 @@ const state = {
       return raw ? JSON.parse(raw) : {};
     } catch { return {}; }
   })(),
+  decodedCovers: {},
   rules: null,
   matchTemplates: null,
   subgroupAliases: null,
@@ -995,7 +996,7 @@ function dashboardAnimeCard(feed, index) {
   const completed = !!update.completed;
   const disabled = !enabled || completed;
   return `<article class="anime-card ${disabled ? 'disabled' : ''}" data-dashboard-feed="${index}">
-    <div class="anime-poster" data-feed-cover data-index="${index}">
+    <div class="anime-poster ${cached && cached.cover && state.decodedCovers[cached.cover] ? 'has-image' : ''}" data-feed-cover data-index="${index}">
       <span class="poster-fallback"><img src="/logo.webp" alt="AniFeed"></span>
       <img class="poster-image" alt="${esc(cached ? cached.title || '' : '')}" ${cached && cached.cover ? `src="${esc(cached.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
       <span class="anime-badge">${completed ? '已完成' : disabled ? '未启用' : '追番中'}</span>
@@ -1378,8 +1379,13 @@ function applyFeedCover(el, data) {
   if (!img) return;
   img.alt = data.title || '';
   const sameSource = img.getAttribute('src') === data.cover;
+  if (sameSource && state.decodedCovers[data.cover]) {
+    el.classList.add('has-image');
+    return;
+  }
   const reveal = () => {
     if (img.naturalWidth <= 0) return;
+    state.decodedCovers[data.cover] = true;
     requestAnimationFrame(() => el.classList.add('has-image'));
   };
   const afterLoad = () => {
@@ -1454,7 +1460,7 @@ function feedCard(feed, index, completed = false) {
   const subgroup = subgroupLabel(feed.subgroup_name || urlSubgroupName(feed.url), feed.name);
   const quarter = quarterOf(feed) || '—';
   return `<article class="anime-card feed-manage-card ${disabled ? 'disabled' : ''}" title="${esc(feed.name)}">
-    <div class="anime-poster" data-feed-cover data-feed-poster data-index="${index}" data-source="${source.key}" title="点击编辑订阅">
+    <div class="anime-poster ${cachedCover && cachedCover.cover && state.decodedCovers[cachedCover.cover] ? 'has-image' : ''}" data-feed-cover data-feed-poster data-index="${index}" data-source="${source.key}" title="点击编辑订阅">
       <span class="poster-fallback"><img src="/logo.webp" alt="AniFeed"></span>
       <img class="poster-image" alt="${esc(cachedCover ? cachedCover.title || '' : '')}" ${cachedCover && cachedCover.cover ? `src="${esc(cachedCover.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
       <span class="anime-badge">${completed ? '已完成' : disabled ? '未启用' : '追番中'}</span>
