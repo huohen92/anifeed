@@ -1080,3 +1080,5 @@ body.hide-hints .switch-desc { display: block !important; opacity: 0; }
   .feed-manage-card .poster-action-left { top: 5px; right: 5px; bottom: auto; left: auto; }
   .feed-manage-card .poster-action-right { display: none; }
 }
+
+.poster-preview img { transition: opacity .4s ease; }

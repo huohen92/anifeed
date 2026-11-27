@@ -1489,6 +1489,20 @@ function syncFeedCover(feed, cover) {
   }
 }
 
+function showPosterImage(img, src) {
+  return new Promise(resolve => {
+    img.classList.remove('show');
+    const done = () => {
+      const show = () => { img.classList.add('show'); resolve(); };
+      if (typeof img.decode === 'function') img.decode().then(show, show); else show();
+    };
+    img.onload = done;
+    img.onerror = () => { img.classList.remove('show'); resolve(); };
+    img.src = src;
+    if (img.complete && img.naturalWidth > 0) done();
+  });
+}
+
 function openPosterModal(feed) {
   const source = sourceInfo(feed.source, feed.url).key;
   const effectiveBgm = feed.bgm_url || bgmURLFromFeedURL(feed.url);
@@ -1520,16 +1534,14 @@ function openPosterModal(feed) {
         try {
           const data = await api(`/api/feeds/cover?${coverQuery}${bust ? `&_=${Date.now()}` : ''}`);
           if (data.cover) {
-            img.src = data.cover;
-            img.classList.add('show');
+            await showPosterImage(img, data.cover);
             empty.classList.add('hidden');
             syncFeedCover(feed, data.cover);
           }
         } catch { /* keep empty */ }
       };
-      const apply = cover => {
-        img.src = cover;
-        img.classList.add('show');
+      const apply = async cover => {
+        await showPosterImage(img, cover);
         empty.classList.add('hidden');
         syncFeedCover(feed, cover);
       };
