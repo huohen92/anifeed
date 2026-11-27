@@ -13,7 +13,7 @@ if ! command -v musl-gcc >/dev/null 2>&1; then
   exit 1
 fi
 
-BINARY_VERSION="${BINARY_VERSION:-0.03.8}"
+BINARY_VERSION="${BINARY_VERSION:-0.03.9}"
 VERSION="$(sed -n 's/^version[[:space:]]*=[[:space:]]*//p' fpk-native/manifest | head -n 1 | tr -d '[:space:]')"
 [ -n "$VERSION" ] || { echo "cannot read version from fpk-native/manifest" >&2; exit 1; }
 

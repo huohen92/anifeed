@@ -265,3 +265,11 @@ html[data-af-bg="on"] body::before {
   .view { padding-bottom: calc(82px + env(safe-area-inset-bottom, 0px)); }
   .topbar { height: 56px; }
 }
+
+/* Background is revealed only after the browser has fully loaded and decoded
+ * the image, so progressive JPEGs do not paint in slices. */
+html[data-af-bg="on"] body::before {
+  opacity: 0;
+  transition: opacity .42s ease;
+}
+html[data-af-bg="on"][data-af-bg-ready="on"] body::before { opacity: 1; }

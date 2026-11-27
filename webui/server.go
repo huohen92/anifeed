@@ -244,6 +244,7 @@ func (s *Server) Start(ctx context.Context) error {
 	go s.startWashScheduleLoop(ctx)
 	go s.startQBFallbackLoop(ctx)
 	go func() {
+		s.cleanupOrphanPosters()
 		ag, err := s.ensureAgent()
 		if err != nil || ag.StoreInstance == nil {
 			return
@@ -435,17 +436,18 @@ func (s *Server) reloadFromDisk() error {
 		return err
 	}
 	p115.SetOption(p115.Option{
-		DisableCache:       cfg.P115.DisableCache,
-		ChunkDelay:         cfg.P115.ChunkDelay,
-		ChunkSize:          cfg.P115.ChunkSize,
-		CooldownMinMs:      cfg.P115.CooldownMinMs,
-		CooldownMaxMs:      cfg.P115.CooldownMaxMs,
-		Retry:              cfg.Offline.Retry,
-		PostProcess:        cfg.Rename.Enabled || cfg.Offline.DualFolder,
-		OnePerEpisode:      cfg.Offline.OnePerEpisode,
-		MultiRssCoexist:    cfg.Lab.MultiRssCoexist,
-		DatabasePath:       cfg.Database.Path,
-		PreferredSubgroups: cfg.Lab.PreferredSubgroups,
+		DisableCache:        cfg.P115.DisableCache,
+		ChunkDelay:          cfg.P115.ChunkDelay,
+		ChunkSize:           cfg.P115.ChunkSize,
+		CooldownMinMs:       cfg.P115.CooldownMinMs,
+		CooldownMaxMs:       cfg.P115.CooldownMaxMs,
+		Retry:               cfg.Offline.Retry,
+		PostProcess:         cfg.Rename.Enabled || cfg.Offline.DualFolder,
+		OnePerEpisode:       cfg.Offline.OnePerEpisode,
+		PreferHigherVersion: cfg.Offline.PreferHigherVersion,
+		MultiRssCoexist:     cfg.Lab.MultiRssCoexist,
+		DatabasePath:        cfg.Database.Path,
+		PreferredSubgroups:  cfg.Lab.PreferredSubgroups,
 	})
 	if err := request.ReloadConfig(); err != nil {
 		log.Printf("[warning] 刷新站点配置失败: %v", err)

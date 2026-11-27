@@ -64,6 +64,7 @@ type EditableOffline struct {
 	AutoClearCompleted   bool     `json:"auto_clear_completed"`
 	AutoDisableCompleted bool     `json:"auto_disable_completed"`
 	OnePerEpisode        bool     `json:"one_per_episode"`
+	PreferHigherVersion  bool     `json:"prefer_higher_version"`
 	KeepOnlyVideo        bool     `json:"keep_only_video"`
 	AutoLanguage         []string `json:"auto_language"`
 	AutoSubtitle         []string `json:"auto_subtitle"`
@@ -192,32 +193,34 @@ type EditableDownloaders struct {
 
 // EditableRSS is one [[rss]] entry.
 type EditableRSS struct {
-	Site            string             `json:"site"`
-	Name            string             `json:"name"`
-	SubgroupName    string             `json:"subgroup_name"`
-	BgmURL          string             `json:"bgm_url"`
-	URL             string             `json:"url"`
-	Source          string             `json:"source"`
-	Enabled         bool               `json:"enabled"`
-	Cid             string             `json:"cid"`
-	SavePath        string             `json:"savepath"`
-	Filter          string             `json:"filter"`
-	Exclude         string             `json:"exclude"`
-	Expiration      uint               `json:"expiration"`
-	RenameSeason    int                `json:"rename_season"`
-	RenameOffset    int                `json:"rename_offset"`
-	AutoOffset      bool               `json:"auto_offset"`
-	AutoBackup      bool               `json:"auto_backup"`
-	UpdateWeekday   int                `json:"update_weekday"`
-	TotalEpisodes   int                `json:"total_episodes"`
-	Completed       bool               `json:"completed"`
-	AutoDisable     bool               `json:"auto_disable"`
-	FinalCid        string             `json:"final_cid"`
-	FinalMode       int                `json:"final_mode"`
-	FinalCustomMode int                `json:"final_custom_mode"`
-	Subgroups       []EditableSubgroup `json:"subgroups"`
-	TmdbID          string             `json:"tmdb_id"`
-	TmdbType        string             `json:"tmdb_type"`
+	Site               string             `json:"site"`
+	Name               string             `json:"name"`
+	SubgroupName       string             `json:"subgroup_name"`
+	BgmURL             string             `json:"bgm_url"`
+	URL                string             `json:"url"`
+	Source             string             `json:"source"`
+	Enabled            bool               `json:"enabled"`
+	Cid                string             `json:"cid"`
+	SavePath           string             `json:"savepath"`
+	Filter             string             `json:"filter"`
+	Exclude            string             `json:"exclude"`
+	Expiration         uint               `json:"expiration"`
+	RenameSeason       int                `json:"rename_season"`
+	RenameOffset       int                `json:"rename_offset"`
+	AutoOffset         bool               `json:"auto_offset"`
+	AutoBackup         bool               `json:"auto_backup"`
+	AutoBackupIdle     bool               `json:"auto_backup_idle"`
+	AutoBackupFailures bool               `json:"auto_backup_failures"`
+	UpdateWeekday      int                `json:"update_weekday"`
+	TotalEpisodes      int                `json:"total_episodes"`
+	Completed          bool               `json:"completed"`
+	AutoDisable        bool               `json:"auto_disable"`
+	FinalCid           string             `json:"final_cid"`
+	FinalMode          int                `json:"final_mode"`
+	FinalCustomMode    int                `json:"final_custom_mode"`
+	Subgroups          []EditableSubgroup `json:"subgroups"`
+	TmdbID             string             `json:"tmdb_id"`
+	TmdbType           string             `json:"tmdb_type"`
 }
 
 // EditableSite is one [sites."host"] entry.
@@ -315,6 +318,7 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 			AutoClearCompleted:   cfg.Offline.AutoClearCompleted,
 			AutoDisableCompleted: cfg.Offline.AutoDisableCompleted,
 			OnePerEpisode:        cfg.Offline.OnePerEpisode,
+			PreferHigherVersion:  cfg.Offline.PreferHigherVersion,
 			KeepOnlyVideo:        cfg.Offline.KeepOnlyVideo,
 			AutoLanguage:         append([]string(nil), cfg.Offline.AutoLanguage...),
 			AutoSubtitle:         append([]string(nil), cfg.Offline.AutoSubtitle...),
@@ -442,22 +446,34 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 				enabled = *rss.Enabled
 			}
 			ec.RSS = append(ec.RSS, EditableRSS{
-				Site:            rss.Site,
-				Name:            rss.Name,
-				SubgroupName:    rss.SubgroupName,
-				BgmURL:          rss.BgmURL,
-				URL:             rss.URL,
-				Source:          config.NormalizeSource(rss.Source, rss.URL),
-				Enabled:         enabled,
-				Cid:             rss.Cid,
-				SavePath:        rss.SavePath,
-				Filter:          rss.Filter,
-				Exclude:         rss.Exclude,
-				Expiration:      rss.Expiration,
-				RenameSeason:    rss.RenameSeason,
-				RenameOffset:    rss.RenameOffset,
-				AutoOffset:      rss.AutoOffset,
-				AutoBackup:      rss.AutoBackup == nil || *rss.AutoBackup,
+				Site:         rss.Site,
+				Name:         rss.Name,
+				SubgroupName: rss.SubgroupName,
+				BgmURL:       rss.BgmURL,
+				URL:          rss.URL,
+				Source:       config.NormalizeSource(rss.Source, rss.URL),
+				Enabled:      enabled,
+				Cid:          rss.Cid,
+				SavePath:     rss.SavePath,
+				Filter:       rss.Filter,
+				Exclude:      rss.Exclude,
+				Expiration:   rss.Expiration,
+				RenameSeason: rss.RenameSeason,
+				RenameOffset: rss.RenameOffset,
+				AutoOffset:   rss.AutoOffset,
+				AutoBackup:   rss.AutoBackup == nil || *rss.AutoBackup,
+				AutoBackupIdle: func() bool {
+					if rss.AutoBackupIdle != nil {
+						return *rss.AutoBackupIdle
+					}
+					return cfg.Lab.AutoBackupIdle
+				}(),
+				AutoBackupFailures: func() bool {
+					if rss.AutoBackupFailures != nil {
+						return *rss.AutoBackupFailures
+					}
+					return cfg.Lab.AutoBackupSubgroup
+				}(),
 				UpdateWeekday:   rss.UpdateWeekday,
 				TotalEpisodes:   rss.TotalEpisodes,
 				Completed:       rss.Completed,
@@ -483,22 +499,34 @@ func (s *Server) loadEditable() (*ConfigResponse, error) {
 					enabled = *rss.Enabled
 				}
 				ec.RSS = append(ec.RSS, EditableRSS{
-					Site:            site,
-					Name:            rss.Name,
-					SubgroupName:    rss.SubgroupName,
-					BgmURL:          rss.BgmURL,
-					URL:             rss.Url,
-					Source:          config.NormalizeSource(rss.Source, rss.Url),
-					Enabled:         enabled,
-					Cid:             rss.Cid,
-					SavePath:        rss.SavePath,
-					Filter:          rss.Filter,
-					Exclude:         rss.Exclude,
-					Expiration:      rss.Expiration,
-					RenameSeason:    rss.RenameSeason,
-					RenameOffset:    rss.RenameOffset,
-					AutoOffset:      rss.AutoOffset,
-					AutoBackup:      rss.AutoBackup == nil || *rss.AutoBackup,
+					Site:         site,
+					Name:         rss.Name,
+					SubgroupName: rss.SubgroupName,
+					BgmURL:       rss.BgmURL,
+					URL:          rss.Url,
+					Source:       config.NormalizeSource(rss.Source, rss.Url),
+					Enabled:      enabled,
+					Cid:          rss.Cid,
+					SavePath:     rss.SavePath,
+					Filter:       rss.Filter,
+					Exclude:      rss.Exclude,
+					Expiration:   rss.Expiration,
+					RenameSeason: rss.RenameSeason,
+					RenameOffset: rss.RenameOffset,
+					AutoOffset:   rss.AutoOffset,
+					AutoBackup:   rss.AutoBackup == nil || *rss.AutoBackup,
+					AutoBackupIdle: func() bool {
+						if rss.AutoBackupIdle != nil {
+							return *rss.AutoBackupIdle
+						}
+						return cfg.Lab.AutoBackupIdle
+					}(),
+					AutoBackupFailures: func() bool {
+						if rss.AutoBackupFailures != nil {
+							return *rss.AutoBackupFailures
+						}
+						return cfg.Lab.AutoBackupSubgroup
+					}(),
 					UpdateWeekday:   rss.UpdateWeekday,
 					TotalEpisodes:   rss.TotalEpisodes,
 					Completed:       rss.Completed,
@@ -777,6 +805,7 @@ func buildTOMLConfig(ec *EditableConfig, configPath string) (*config.TOMLConfig,
 			AutoClearCompleted:   ec.Offline.AutoClearCompleted,
 			AutoDisableCompleted: ec.Offline.AutoDisableCompleted,
 			OnePerEpisode:        &ec.Offline.OnePerEpisode,
+			PreferHigherVersion:  ec.Offline.PreferHigherVersion,
 			KeepOnlyVideo:        ec.Offline.KeepOnlyVideo,
 			AutoLanguage:         ec.Offline.AutoLanguage,
 			AutoSubtitle:         ec.Offline.AutoSubtitle,
@@ -917,27 +946,29 @@ func buildTOMLConfig(ec *EditableConfig, configPath string) (*config.TOMLConfig,
 		}
 		enabled := rss.Enabled
 		tc.RSS = append(tc.RSS, config.TOMLRSSConfig{
-			Site:          site,
-			Name:          name,
-			SubgroupName:  strings.TrimSpace(rss.SubgroupName),
-			BgmURL:        strings.TrimSpace(rss.BgmURL),
-			URL:           rawURL,
-			Source:        config.NormalizeSource(rss.Source, rawURL),
-			Enabled:       &enabled,
-			Cid:           strings.TrimSpace(rss.Cid),
-			SavePath:      strings.TrimSpace(rss.SavePath),
-			Filter:        strings.TrimSpace(rss.Filter),
-			Exclude:       strings.TrimSpace(rss.Exclude),
-			Expiration:    rss.Expiration,
-			RenameSeason:  rss.RenameSeason,
-			RenameOffset:  rss.RenameOffset,
-			AutoOffset:    rss.AutoOffset,
-			AutoBackup:    &rss.AutoBackup,
-			UpdateWeekday: rss.UpdateWeekday,
-			TotalEpisodes: rss.TotalEpisodes,
-			Completed:     rss.Completed,
-			AutoDisable:   rss.AutoDisable,
-			FinalCid:      strings.TrimSpace(rss.FinalCid),
+			Site:               site,
+			Name:               name,
+			SubgroupName:       strings.TrimSpace(rss.SubgroupName),
+			BgmURL:             strings.TrimSpace(rss.BgmURL),
+			URL:                rawURL,
+			Source:             config.NormalizeSource(rss.Source, rawURL),
+			Enabled:            &enabled,
+			Cid:                strings.TrimSpace(rss.Cid),
+			SavePath:           strings.TrimSpace(rss.SavePath),
+			Filter:             strings.TrimSpace(rss.Filter),
+			Exclude:            strings.TrimSpace(rss.Exclude),
+			Expiration:         rss.Expiration,
+			RenameSeason:       rss.RenameSeason,
+			RenameOffset:       rss.RenameOffset,
+			AutoOffset:         rss.AutoOffset,
+			AutoBackup:         &rss.AutoBackup,
+			AutoBackupIdle:     &rss.AutoBackupIdle,
+			AutoBackupFailures: &rss.AutoBackupFailures,
+			UpdateWeekday:      rss.UpdateWeekday,
+			TotalEpisodes:      rss.TotalEpisodes,
+			Completed:          rss.Completed,
+			AutoDisable:        rss.AutoDisable,
+			FinalCid:           strings.TrimSpace(rss.FinalCid),
 			FinalMode: func() int {
 				if rss.FinalMode == 2 {
 					return 2

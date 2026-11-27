@@ -24,26 +24,28 @@ import (
 )
 
 type agentOptions struct {
-	disableCache       bool
-	chunkDelay         int
-	chunkSize          int
-	cooldownMinMs      uint
-	cooldownMaxMs      uint
-	databasePath       string
-	retry              int
-	postProcess        bool
-	onePerEpisode      bool
-	multiRssCoexist    bool
-	preferredSubgroups []string
+	disableCache        bool
+	chunkDelay          int
+	chunkSize           int
+	cooldownMinMs       uint
+	cooldownMaxMs       uint
+	databasePath        string
+	retry               int
+	postProcess         bool
+	onePerEpisode       bool
+	preferHigherVersion bool
+	multiRssCoexist     bool
+	preferredSubgroups  []string
 }
 
 var (
 	agentOptionsMu sync.RWMutex
 	currentOptions = agentOptions{
-		chunkDelay:    2,
-		chunkSize:     200,
-		databasePath:  "db.sqlite",
-		onePerEpisode: false,
+		chunkDelay:          2,
+		chunkSize:           200,
+		databasePath:        "db.sqlite",
+		onePerEpisode:       false,
+		preferHigherVersion: false,
 	}
 )
 
@@ -54,30 +56,32 @@ func optsSnapshot() agentOptions {
 }
 
 type Option struct {
-	DisableCache       bool
-	ChunkDelay         int
-	ChunkSize          int
-	CooldownMinMs      int
-	CooldownMaxMs      int
-	Retry              int
-	PostProcess        bool
-	OnePerEpisode      bool
-	MultiRssCoexist    bool
-	DatabasePath       string
-	PreferredSubgroups []string
+	DisableCache        bool
+	ChunkDelay          int
+	ChunkSize           int
+	CooldownMinMs       int
+	CooldownMaxMs       int
+	Retry               int
+	PostProcess         bool
+	OnePerEpisode       bool
+	PreferHigherVersion bool
+	MultiRssCoexist     bool
+	DatabasePath        string
+	PreferredSubgroups  []string
 }
 
 func SetOption(opt Option) {
 	next := agentOptions{
-		disableCache:       opt.DisableCache,
-		chunkDelay:         2,
-		chunkSize:          200,
-		databasePath:       "db.sqlite",
-		retry:              opt.Retry,
-		postProcess:        opt.PostProcess,
-		onePerEpisode:      opt.OnePerEpisode,
-		multiRssCoexist:    opt.MultiRssCoexist,
-		preferredSubgroups: append([]string(nil), opt.PreferredSubgroups...),
+		disableCache:        opt.DisableCache,
+		chunkDelay:          2,
+		chunkSize:           200,
+		databasePath:        "db.sqlite",
+		retry:               opt.Retry,
+		postProcess:         opt.PostProcess,
+		onePerEpisode:       opt.OnePerEpisode,
+		preferHigherVersion: opt.PreferHigherVersion,
+		multiRssCoexist:     opt.MultiRssCoexist,
+		preferredSubgroups:  append([]string(nil), opt.PreferredSubgroups...),
 	}
 	if opt.ChunkDelay > 0 {
 		next.chunkDelay = opt.ChunkDelay
@@ -380,7 +384,7 @@ func (ag *Agent) runRssConfig(config *rsssite.RssConfig, skipEpisodes map[int]bo
 		magnetItems = kept
 	}
 
-	selected := SelectEpisodes(magnetItems, opts.onePerEpisode)
+	selected := SelectEpisodes(magnetItems, opts.onePerEpisode, opts.preferHigherVersion)
 	selectedItems, skipped := selectWithDecisions(magnetItems, selected, decisions)
 	result.Skipped += skipped
 	if result.Skipped > 0 {

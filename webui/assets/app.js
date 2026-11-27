@@ -1011,7 +1011,7 @@ function dashboardAnimeCard(feed, index) {
   const completed = !!update.completed;
   const disabled = !enabled || completed;
   return `<article class="anime-card ${disabled ? 'disabled' : ''}" data-dashboard-feed="${index}">
-    <div class="anime-poster" data-feed-cover data-index="${index}">
+    <div class="anime-poster ${cached && cached.cover ? 'has-image' : ''}" data-feed-cover data-index="${index}">
       <span class="poster-fallback"><img src="/logo.webp" alt="AniFeed"></span>
       <img class="poster-image" alt="${esc(cached ? cached.title || '' : '')}" ${cached && cached.cover ? `src="${esc(cached.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
       <span class="anime-badge">${completed ? '已完成' : disabled ? '未启用' : '追番中'}</span>
@@ -1393,14 +1393,20 @@ function applyFeedCover(el, data) {
   const img = el.querySelector('.poster-image');
   if (!img) return;
   img.alt = data.title || '';
-  el.classList.remove('has-image');
+  const sameSource = img.getAttribute('src') === data.cover;
   const reveal = () => { if (img.naturalWidth > 0) el.classList.add('has-image'); };
-  img.addEventListener('load', reveal, { once: true });
-  img.addEventListener('error', () => el.classList.remove('has-image'), { once: true });
-  if (img.getAttribute('src') !== data.cover) {
+  if (!sameSource) {
+    el.classList.remove('has-image');
+    img.addEventListener('load', reveal, { once: true });
+    img.addEventListener('error', () => el.classList.remove('has-image'), { once: true });
     img.src = data.cover;
+  } else if (el.classList.contains('has-image')) {
+    reveal();
+  } else {
+    img.addEventListener('load', reveal, { once: true });
+    img.addEventListener('error', () => el.classList.remove('has-image'), { once: true });
+    if (img.complete) reveal();
   }
-  if (img.complete) reveal();
   if (data.score > 0) {
     const score = $('.poster-score', el);
     if (score) {
@@ -1454,7 +1460,7 @@ function feedCard(feed, index, completed = false) {
   const totalText = progress.total || '*';
   const subgroup = subgroupLabel(feed.subgroup_name || urlSubgroupName(feed.url), feed.name);
   return `<article class="anime-card feed-manage-card ${disabled ? 'disabled' : ''}" title="${esc(feed.name)}">
-    <div class="anime-poster" data-feed-cover data-feed-poster data-index="${index}" data-source="${source.key}" title="点击编辑订阅">
+    <div class="anime-poster ${cachedCover && cachedCover.cover ? 'has-image' : ''}" data-feed-cover data-feed-poster data-index="${index}" data-source="${source.key}" title="点击编辑订阅">
       <span class="poster-fallback"><img src="/logo.webp" alt="AniFeed"></span>
       <img class="poster-image" alt="${esc(cachedCover ? cachedCover.title || '' : '')}" ${cachedCover && cachedCover.cover ? `src="${esc(cachedCover.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
       <span class="anime-badge">${completed ? '已完成' : disabled ? '未启用' : '追番中'}</span>
@@ -1462,6 +1468,9 @@ function feedCard(feed, index, completed = false) {
         <h4>${esc(feed.name || '未命名订阅')}</h4>
         <div>第 ${Number(feed.rename_season) || 1} 季${subgroup ? ` · ${esc(subgroup)}` : ''}</div>
         <div class="feed-cover-progress">主 ${progress.mainDone} · 合计 ${progress.allDone}/${totalText}</div>
+        <div class="feed-card-meta" title="季 ${Number(feed.rename_season) || 1} · 播出 ${esc(quarterOf(feed) || '—')} · ${esc(subgroup || '—')} · ${completed ? '已完成' : disabled ? '未启用' : '已启用'} · ${progress.allDone}/${totalText} · ${esc(feed.tmdb_type || 'tv')}">
+          <span>S${Number(feed.rename_season) || 1}</span><span>${esc(quarterOf(feed) || '—')}</span><span>${esc(subgroup || '—')}</span><span>${completed ? '已完成' : disabled ? '未启用' : '已启用'}</span><span>${progress.allDone}/${totalText}</span><span>${esc(feed.tmdb_type || 'tv')}</span>
+        </div>
       </div>
       <button class="poster-action poster-action-left" type="button" data-poster-action="poster" title="修改海报">${icon('image')}</button>
       <button class="poster-action poster-action-right" type="button" data-poster-action="edit" title="编辑订阅">${icon('edit')}</button>
@@ -2880,6 +2889,8 @@ function openFeedModal(index, prefill = null) {
     expiration: 0,
     tmdb_id: prefill?.tmdb_id || '',
     tmdb_type: prefill?.tmdb_type || 'tv',
+    auto_backup_idle: !!((state.config.lab || {}).auto_backup_idle),
+    auto_backup_failures: !!((state.config.lab || {}).auto_backup_subgroup),
   };
   const initialSource = sourceInfo(feed.source, feed.url).key;
   const mikanHost = ((state.config.subscription || {}).mikan_host || 'https://mikanani.me');
@@ -2953,7 +2964,7 @@ function openFeedModal(index, prefill = null) {
                 <span class="hint">用于重命名，如 S01</span>
               </label>
               <label class="field"><span>集数偏移</span><input class="input input-compact" id="feed-rename-offset" type="number" min="-1000" max="1000" value="${Number(feed.rename_offset || 0)}"><span class="hint">RSS 集数与实际相差几集</span></label>
-              <label class="field"><span>总集数</span><input class="input input-compact" id="feed-total-episodes" type="number" min="0" max="10000" placeholder="总集数" value="${Number(feed.total_episodes || 0)}"><span class="hint">0 表示未设置</span></label>
+              <label class="field"><span>总集数</span><div class="field-row"><input class="input input-compact" id="feed-total-episodes" type="number" min="0" max="10000" placeholder="总集数" value="${Number(feed.total_episodes || 0)}"><button class="btn btn-sm btn-icon-only" type="button" id="feed-total-fetch" title="从 TMDB 自动获取总集数">${icon('refresh')}</button></div><span class="hint">0 表示未设置；已关联 TMDB 时可自动获取</span></label>
               <label class="field"><span>播出季度</span><div class="feed-quarter-editor"><input class="input input-compact" id="feed-quarter-year" type="number" min="2000" max="2100" placeholder="年份" value="${quarterOf(feed) ? quarterOf(feed).slice(0,4) : new Date().getFullYear()}"><select class="select" id="feed-quarter-month">${["01","04","07","10"].map(m => `<option value="${m}" ${((quarterOf(feed) ? quarterOf(feed).slice(5) : String(Math.floor(new Date().getMonth()/3) === 0 ? "01" : Math.floor(new Date().getMonth()/3) === 1 ? "04" : Math.floor(new Date().getMonth()/3) === 2 ? "07" : "10")) === m) ? "selected" : ""}>${m}</option>`).join("")}</select></div><span class="hint">仅用于显示和筛选，不参与重命名</span></label>
             </div>
           </div>
@@ -3009,6 +3020,9 @@ function openFeedModal(index, prefill = null) {
             <div class="feed-form-section-head">备用 RSS 策略</div>
             <div class="form-grid">
               <label class="field span-2"><span>启用自动加入备用 RSS</span><span class="check" style="height:32px"><span class="switch"><input type="checkbox" id="feed-auto-backup" ${feed.auto_backup !== false ? 'checked' : ''}><span></span></span><span>仅对该订阅生效</span><button class="help-dot" type="button" id="feed-auto-backup-help" title="查看说明">?</button></span></label>
+              <label class="field span-2"><span>连续失败后自动加入备用 RSS</span><span class="check" style="height:32px"><span class="switch"><input type="checkbox" id="feed-auto-backup-failures" ${feed.auto_backup_failures !== false ? 'checked' : ''}><span></span></span><span>主 RSS 连续添加失败达到全局次数后触发</span></span></label>
+              <label class="field span-2"><span>摸鱼后自动加入备用 RSS</span><span class="check" style="height:32px"><span class="switch"><input type="checkbox" id="feed-auto-backup-idle" ${feed.auto_backup_idle ? 'checked' : ''}><span></span></span><span>超过摸鱼提醒天数后触发；全局「摸鱼后自动补充」也需开启</span></span></label>
+
               <label class="field span-2"><span>自动备用 RSS 使用 TMDB 集数偏移</span><span class="check" style="height:32px"><span class="switch"><input type="checkbox" id="feed-auto-offset" ${feed.auto_offset ? 'checked' : ''}><span></span></span><span>TMDB 自动校正</span><button class="help-dot" type="button" id="feed-auto-offset-help" title="查看说明">?</button></span></label>
             </div>
           </div>
@@ -3444,6 +3458,25 @@ function openFeedModal(index, prefill = null) {
       $('#feed-name', el)?.addEventListener('change', scheduleSeason);
       $('#feed-tmdb-id', el)?.addEventListener('change', scheduleSeason);
       $('#feed-season-suggest', el)?.addEventListener('click', suggestSeason);
+      $('#feed-total-fetch', el)?.addEventListener('click', async () => {
+        const button = $('#feed-total-fetch', el);
+        const tmdbID = ($('#feed-tmdb-id', el) || {}).value?.trim() || '';
+        const type = ($('#feed-tmdb-type', el) || {}).value || 'tv';
+        if (!tmdbID) { toast('请先关联 TMDB ID', 'error'); return; }
+        setLoading(button, true);
+        try {
+          const data = await api('/api/tmdb/detail?id=' + encodeURIComponent(tmdbID) + '&type=' + encodeURIComponent(type));
+          const total = Number(data.number_of_episodes || 0);
+          if (!(total > 0)) { toast('TMDB 没有返回总集数', 'error'); return; }
+          $('#feed-total-episodes', el).value = total;
+          markDirty();
+          toast('已获取总集数：' + total, 'success');
+        } catch (err) {
+          toast('获取总集数失败：' + err.message, 'error', 5200);
+        } finally {
+          setLoading(button, false);
+        }
+      });
       $('#feed-rename-season', el)?.addEventListener('input', event => { event.target.dataset.autofilled = ''; });
       let quarterTouched = false;
       const readQuarter = () => {
@@ -3647,6 +3680,8 @@ function readFeedForm(root, local) {
     total_episodes: Number(($('#feed-total-episodes', root) || {}).value || 0),
     auto_offset: !!($('#feed-auto-offset', root) || {}).checked,
     auto_backup: !!($('#feed-auto-backup', root) || {}).checked,
+    auto_backup_idle: !!($('#feed-auto-backup-idle', root) || {}).checked,
+    auto_backup_failures: !!($('#feed-auto-backup-failures', root) || {}).checked,
     completed: !!local.completed,
     final_cid: (($('#feed-final-source', root) || {}).value === 'custom') ? (($('#feed-final-cid', root) || {}).value?.trim() || '') : '',
     final_mode: (($('#feed-final-source', root) || {}).value === 'global2') ? 2 : 1,

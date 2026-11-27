@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -270,4 +271,47 @@ func bangumiIDFromValue(value string) string {
 		return value
 	}
 	return ""
+}
+
+// cleanupOrphanPosters removes cached cover files that no longer belong to any
+// configured feed. This prevents leftovers from deleted test subscriptions
+// from appearing after a fresh deployment or database merge.
+func (s *Server) cleanupOrphanPosters() {
+	cfg := s.configSnapshot()
+	if cfg == nil {
+		return
+	}
+	valid := map[string]bool{}
+	for _, feeds := range cfg.RSS {
+		for _, feed := range feeds {
+			if key := posterKeyForURL(feed.Url); key != "" {
+				valid[key] = true
+			}
+		}
+	}
+	entries, err := os.ReadDir(s.posterDir())
+	if err != nil {
+		return
+	}
+	removed := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		ext := filepath.Ext(name)
+		if ext != ".jpg" && ext != ".png" && ext != ".webp" && ext != ".gif" {
+			continue
+		}
+		key := strings.TrimSuffix(name, ext)
+		if valid[key] {
+			continue
+		}
+		if err := os.Remove(filepath.Join(s.posterDir(), name)); err == nil {
+			removed++
+		}
+	}
+	if removed > 0 {
+		log.Printf("[poster] 清理 %d 张无主海报", removed)
+	}
 }

@@ -22,7 +22,8 @@ type Selection struct {
 
 // SelectEpisodes keeps one item per episode. Items without a parseable episode
 // are kept as-is. Ties keep the earliest RSS item.
-func SelectEpisodes(items []rsssite.MagnetItem, enabled bool) []Selection {
+func SelectEpisodes(items []rsssite.MagnetItem, enabled bool, preferHigherVersion ...bool) []Selection {
+	preferHigher := len(preferHigherVersion) > 0 && preferHigherVersion[0]
 	result := make([]Selection, len(items))
 	if !enabled {
 		for i := range items {
@@ -50,7 +51,11 @@ func SelectEpisodes(items []rsssite.MagnetItem, enabled bool) []Selection {
 			groups[key] = &group{best: i, score: score, version: version}
 			continue
 		}
-		if score > current.score || (score == current.score && version > current.version) {
+		better := score > current.score || (score == current.score && version > current.version)
+		if preferHigher {
+			better = version > current.version || (version == current.version && score > current.score)
+		}
+		if better {
 			result[current.best].Selected = false
 			result[current.best].Reason = fmt.Sprintf("同集已有更优版本（%d 分，v%d）", score, version)
 			current.best = i

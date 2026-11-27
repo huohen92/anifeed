@@ -54,6 +54,7 @@ type TOMLOfflineConfig struct {
 	FinalCid2            string   `toml:"final_cid2"`
 	FinalPathTemplate    string   `toml:"final_path_template"`
 	OnePerEpisode        *bool    `toml:"one_per_episode"`
+	PreferHigherVersion  bool     `toml:"prefer_higher_version"`
 	KeepOnlyVideo        bool     `toml:"keep_only_video"`
 	AutoLanguage         []string `toml:"auto_language"`
 	AutoSubtitle         []string `toml:"auto_subtitle"`
@@ -198,32 +199,34 @@ type TOMLRSSSubgroup struct {
 }
 
 type TOMLRSSConfig struct {
-	Site            string            `toml:"site"`           // Required: host for grouping
-	Name            string            `toml:"name"`           // Required: feed name
-	SubgroupName    string            `toml:"subgroup_name"`  // Optional: main RSS subgroup label
-	BgmURL          string            `toml:"bgm_url"`        // Optional: Bangumi subject URL
-	URL             string            `toml:"url"`            // Required: RSS feed URL
-	Source          string            `toml:"source"`         // Optional: mikan|anibt|animegarden|other
-	Enabled         *bool             `toml:"enabled"`        // Optional: defaults to true
-	Cid             string            `toml:"cid"`            // Optional: 115 directory ID
-	SavePath        string            `toml:"savepath"`       // Optional: save path
-	Filter          string            `toml:"filter"`         // Optional: content filter (whitelist)
-	Exclude         string            `toml:"exclude"`        // Optional: content filter (blacklist)
-	Expiration      uint              `toml:"expiration"`     // Optional: cache expiration
-	RenameSeason    int               `toml:"rename_season"`  // Optional: per-feed rename season
-	RenameOffset    int               `toml:"rename_offset"`  // Optional: per-feed episode offset
-	AutoOffset      bool              `toml:"auto_offset"`    // Optional: TMDB offset for auto backup
-	AutoBackup      *bool             `toml:"auto_backup"`    // Optional: allow auto backup RSS (default true)
-	UpdateWeekday   int               `toml:"update_weekday"` // Optional: 1=Monday ... 7=Sunday
-	TotalEpisodes   int               `toml:"total_episodes"` // Optional: total episodes for completion
-	Completed       bool              `toml:"completed"`
-	AutoDisable     bool              `toml:"auto_disable"`
-	FinalCid        string            `toml:"final_cid"`
-	FinalMode       int               `toml:"final_mode"`
-	FinalCustomMode int               `toml:"final_custom_mode"`
-	Subgroups       []TOMLRSSSubgroup `toml:"subgroups"`
-	TmdbID          string            `toml:"tmdb_id"`   // Optional: TMDB subject id
-	TmdbType        string            `toml:"tmdb_type"` // Optional: tv|movie
+	Site               string            `toml:"site"`          // Required: host for grouping
+	Name               string            `toml:"name"`          // Required: feed name
+	SubgroupName       string            `toml:"subgroup_name"` // Optional: main RSS subgroup label
+	BgmURL             string            `toml:"bgm_url"`       // Optional: Bangumi subject URL
+	URL                string            `toml:"url"`           // Required: RSS feed URL
+	Source             string            `toml:"source"`        // Optional: mikan|anibt|animegarden|other
+	Enabled            *bool             `toml:"enabled"`       // Optional: defaults to true
+	Cid                string            `toml:"cid"`           // Optional: 115 directory ID
+	SavePath           string            `toml:"savepath"`      // Optional: save path
+	Filter             string            `toml:"filter"`        // Optional: content filter (whitelist)
+	Exclude            string            `toml:"exclude"`       // Optional: content filter (blacklist)
+	Expiration         uint              `toml:"expiration"`    // Optional: cache expiration
+	RenameSeason       int               `toml:"rename_season"` // Optional: per-feed rename season
+	RenameOffset       int               `toml:"rename_offset"` // Optional: per-feed episode offset
+	AutoOffset         bool              `toml:"auto_offset"`   // Optional: TMDB offset for auto backup
+	AutoBackup         *bool             `toml:"auto_backup"`   // Optional: allow auto backup RSS (default true)
+	AutoBackupIdle     *bool             `toml:"auto_backup_idle"`
+	AutoBackupFailures *bool             `toml:"auto_backup_failures"`
+	UpdateWeekday      int               `toml:"update_weekday"` // Optional: 1=Monday ... 7=Sunday
+	TotalEpisodes      int               `toml:"total_episodes"` // Optional: total episodes for completion
+	Completed          bool              `toml:"completed"`
+	AutoDisable        bool              `toml:"auto_disable"`
+	FinalCid           string            `toml:"final_cid"`
+	FinalMode          int               `toml:"final_mode"`
+	FinalCustomMode    int               `toml:"final_custom_mode"`
+	Subgroups          []TOMLRSSSubgroup `toml:"subgroups"`
+	TmdbID             string            `toml:"tmdb_id"`   // Optional: TMDB subject id
+	TmdbType           string            `toml:"tmdb_type"` // Optional: tv|movie
 }
 
 // TOMLSiteConfig represents site-specific HTTP configuration
@@ -447,28 +450,30 @@ func TransformTOMLRSS(tomlRSS []TOMLRSSConfig) map[string][]RssConfig {
 			enabled = *tr.Enabled
 		}
 		rssConfig := RssConfig{
-			Name:            tr.Name,
-			SubgroupName:    tr.SubgroupName,
-			BgmURL:          tr.BgmURL,
-			Url:             tr.URL,
-			Source:          NormalizeSource(tr.Source, tr.URL),
-			Enabled:         &enabled,
-			Cid:             tr.Cid,
-			SavePath:        tr.SavePath,
-			Filter:          tr.Filter,
-			Exclude:         tr.Exclude,
-			Expiration:      tr.Expiration,
-			RenameSeason:    tr.RenameSeason,
-			RenameOffset:    tr.RenameOffset,
-			AutoOffset:      tr.AutoOffset,
-			AutoBackup:      tr.AutoBackup,
-			UpdateWeekday:   tr.UpdateWeekday,
-			TotalEpisodes:   tr.TotalEpisodes,
-			Completed:       tr.Completed,
-			AutoDisable:     tr.AutoDisable,
-			FinalCid:        tr.FinalCid,
-			FinalMode:       tr.FinalMode,
-			FinalCustomMode: tr.FinalCustomMode,
+			Name:               tr.Name,
+			SubgroupName:       tr.SubgroupName,
+			BgmURL:             tr.BgmURL,
+			Url:                tr.URL,
+			Source:             NormalizeSource(tr.Source, tr.URL),
+			Enabled:            &enabled,
+			Cid:                tr.Cid,
+			SavePath:           tr.SavePath,
+			Filter:             tr.Filter,
+			Exclude:            tr.Exclude,
+			Expiration:         tr.Expiration,
+			RenameSeason:       tr.RenameSeason,
+			RenameOffset:       tr.RenameOffset,
+			AutoOffset:         tr.AutoOffset,
+			AutoBackup:         tr.AutoBackup,
+			AutoBackupIdle:     tr.AutoBackupIdle,
+			AutoBackupFailures: tr.AutoBackupFailures,
+			UpdateWeekday:      tr.UpdateWeekday,
+			TotalEpisodes:      tr.TotalEpisodes,
+			Completed:          tr.Completed,
+			AutoDisable:        tr.AutoDisable,
+			FinalCid:           tr.FinalCid,
+			FinalMode:          tr.FinalMode,
+			FinalCustomMode:    tr.FinalCustomMode,
 			Subgroups: func() []RssSubgroup {
 				result := make([]RssSubgroup, 0, len(tr.Subgroups))
 				for _, group := range tr.Subgroups {

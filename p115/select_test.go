@@ -107,3 +107,18 @@ func TestSelectEpisodesPrefersHigherVersion(t *testing.T) {
 		t.Fatalf("v3 should win: %+v", got)
 	}
 }
+
+func TestSelectEpisodesPreferHigherVersionOverQuality(t *testing.T) {
+	items := []rsssite.MagnetItem{
+		{Title: "[Sub] Anime - 01 [1080p]"},
+		{Title: "[Sub] Anime - 01v2 [720p]"},
+	}
+	def := SelectEpisodes(items, true)
+	if !def[0].Selected || def[1].Selected {
+		t.Fatalf("default should prefer 1080p: %+v", def)
+	}
+	preferred := SelectEpisodes(items, true, true)
+	if !preferred[1].Selected || preferred[0].Selected {
+		t.Fatalf("higher version should win: %+v", preferred)
+	}
+}

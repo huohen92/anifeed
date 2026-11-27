@@ -13,32 +13,34 @@ import (
 )
 
 type feedPayload struct {
-	Site            string                `json:"site"`
-	Name            string                `json:"name"`
-	SubgroupName    string                `json:"subgroup_name"`
-	BgmURL          string                `json:"bgm_url"`
-	URL             string                `json:"url"`
-	Source          string                `json:"source"`
-	Enabled         bool                  `json:"enabled"`
-	Cid             string                `json:"cid"`
-	SavePath        string                `json:"savepath"`
-	Filter          string                `json:"filter"`
-	Exclude         string                `json:"exclude"`
-	Expiration      uint                  `json:"expiration"`
-	RenameSeason    int                   `json:"rename_season"`
-	RenameOffset    int                   `json:"rename_offset"`
-	AutoOffset      bool                  `json:"auto_offset"`
-	AutoBackup      bool                  `json:"auto_backup"`
-	UpdateWeekday   int                   `json:"update_weekday"`
-	TotalEpisodes   int                   `json:"total_episodes"`
-	Completed       bool                  `json:"completed"`
-	AutoDisable     bool                  `json:"auto_disable"`
-	FinalCid        string                `json:"final_cid"`
-	FinalMode       int                   `json:"final_mode"`
-	FinalCustomMode int                   `json:"final_custom_mode"`
-	Subgroups       []rsssite.RssSubgroup `json:"subgroups"`
-	TmdbID          string                `json:"tmdb_id"`
-	TmdbType        string                `json:"tmdb_type"`
+	Site               string                `json:"site"`
+	Name               string                `json:"name"`
+	SubgroupName       string                `json:"subgroup_name"`
+	BgmURL             string                `json:"bgm_url"`
+	URL                string                `json:"url"`
+	Source             string                `json:"source"`
+	Enabled            bool                  `json:"enabled"`
+	Cid                string                `json:"cid"`
+	SavePath           string                `json:"savepath"`
+	Filter             string                `json:"filter"`
+	Exclude            string                `json:"exclude"`
+	Expiration         uint                  `json:"expiration"`
+	RenameSeason       int                   `json:"rename_season"`
+	RenameOffset       int                   `json:"rename_offset"`
+	AutoOffset         bool                  `json:"auto_offset"`
+	AutoBackup         bool                  `json:"auto_backup"`
+	AutoBackupIdle     bool                  `json:"auto_backup_idle"`
+	AutoBackupFailures bool                  `json:"auto_backup_failures"`
+	UpdateWeekday      int                   `json:"update_weekday"`
+	TotalEpisodes      int                   `json:"total_episodes"`
+	Completed          bool                  `json:"completed"`
+	AutoDisable        bool                  `json:"auto_disable"`
+	FinalCid           string                `json:"final_cid"`
+	FinalMode          int                   `json:"final_mode"`
+	FinalCustomMode    int                   `json:"final_custom_mode"`
+	Subgroups          []rsssite.RssSubgroup `json:"subgroups"`
+	TmdbID             string                `json:"tmdb_id"`
+	TmdbType           string                `json:"tmdb_type"`
 }
 
 func (p feedPayload) validate() error {

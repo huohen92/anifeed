@@ -26,7 +26,7 @@ func (s *Server) recordAutoBackupFailures(cfg *config.Config, results []p115.Fee
 	}
 	for _, feeds := range cfg.RSS {
 		for _, feed := range feeds {
-			if !feed.IsEnabled() {
+			if !feed.IsEnabled() || !autoBackupFailuresEnabled(cfg, feed) {
 				continue
 			}
 			result, ok := byURL[strings.TrimSpace(feed.Url)]
@@ -250,7 +250,7 @@ func (s *Server) checkIdleAutoBackup(cfg *config.Config) {
 	dayKey := now.Format("2006-01-02")
 	for _, feeds := range cfg.RSS {
 		for _, feed := range feeds {
-			if !feed.IsEnabled() || !feed.AutoBackupEnabled() {
+			if !feed.IsEnabled() || !feed.AutoBackupEnabled() || !autoBackupIdleEnabled(cfg, feed) {
 				continue
 			}
 			last, ok, lookupErr := st.LatestHistoryForFeed(feed.Url)
@@ -271,4 +271,18 @@ func (s *Server) checkIdleAutoBackup(cfg *config.Config) {
 			s.autoBackupSubgroups(cfg, feed.Url)
 		}
 	}
+}
+
+func autoBackupFailuresEnabled(cfg *config.Config, feed config.RssConfig) bool {
+	if feed.AutoBackupFailures != nil {
+		return *feed.AutoBackupFailures
+	}
+	return cfg != nil && cfg.Lab.AutoBackupSubgroup
+}
+
+func autoBackupIdleEnabled(cfg *config.Config, feed config.RssConfig) bool {
+	if feed.AutoBackupIdle != nil {
+		return *feed.AutoBackupIdle
+	}
+	return cfg != nil && cfg.Lab.AutoBackupIdle
 }

@@ -24,32 +24,34 @@ func (s RssSubgroup) IsEnabled() bool {
 }
 
 type RssConfig struct {
-	Name            string        `json:"name"`
-	SubgroupName    string        `json:"subgroup_name,omitempty"`
-	BgmURL          string        `json:"bgm_url,omitempty"`
-	Url             string        `json:"url"`
-	Source          string        `json:"source,omitempty"`
-	Enabled         *bool         `json:"enabled,omitempty"`
-	Cid             string        `json:"cid,omitempty"`
-	SavePath        string        `json:"savepath,omitempty"`
-	Filter          string        `json:"filter,omitempty"`
-	Exclude         string        `json:"exclude,omitempty"`
-	StartEpisode    int           `json:"start_episode,omitempty"`
-	AutoOffset      bool          `json:"auto_offset,omitempty"`
-	AutoBackup      *bool         `json:"auto_backup,omitempty"`
-	Expiration      uint          `json:"expiration,omitempty"`
-	RenameSeason    int           `json:"rename_season,omitempty"`
-	RenameOffset    int           `json:"rename_offset,omitempty"`
-	UpdateWeekday   int           `json:"update_weekday,omitempty"`
-	TotalEpisodes   int           `json:"total_episodes,omitempty"`
-	Completed       bool          `json:"completed,omitempty"`
-	AutoDisable     bool          `json:"auto_disable,omitempty"`
-	FinalCid        string        `json:"final_cid,omitempty"`
-	FinalMode       int           `json:"final_mode,omitempty"`
-	FinalCustomMode int           `json:"final_custom_mode,omitempty"`
-	Subgroups       []RssSubgroup `json:"subgroups,omitempty"`
-	TmdbID          string        `json:"tmdb_id,omitempty"`
-	TmdbType        string        `json:"tmdb_type,omitempty"`
+	Name               string        `json:"name"`
+	SubgroupName       string        `json:"subgroup_name,omitempty"`
+	BgmURL             string        `json:"bgm_url,omitempty"`
+	Url                string        `json:"url"`
+	Source             string        `json:"source,omitempty"`
+	Enabled            *bool         `json:"enabled,omitempty"`
+	Cid                string        `json:"cid,omitempty"`
+	SavePath           string        `json:"savepath,omitempty"`
+	Filter             string        `json:"filter,omitempty"`
+	Exclude            string        `json:"exclude,omitempty"`
+	StartEpisode       int           `json:"start_episode,omitempty"`
+	AutoOffset         bool          `json:"auto_offset,omitempty"`
+	AutoBackup         *bool         `json:"auto_backup,omitempty"`
+	AutoBackupIdle     *bool         `json:"auto_backup_idle,omitempty"`
+	AutoBackupFailures *bool         `json:"auto_backup_failures,omitempty"`
+	Expiration         uint          `json:"expiration,omitempty"`
+	RenameSeason       int           `json:"rename_season,omitempty"`
+	RenameOffset       int           `json:"rename_offset,omitempty"`
+	UpdateWeekday      int           `json:"update_weekday,omitempty"`
+	TotalEpisodes      int           `json:"total_episodes,omitempty"`
+	Completed          bool          `json:"completed,omitempty"`
+	AutoDisable        bool          `json:"auto_disable,omitempty"`
+	FinalCid           string        `json:"final_cid,omitempty"`
+	FinalMode          int           `json:"final_mode,omitempty"`
+	FinalCustomMode    int           `json:"final_custom_mode,omitempty"`
+	Subgroups          []RssSubgroup `json:"subgroups,omitempty"`
+	TmdbID             string        `json:"tmdb_id,omitempty"`
+	TmdbType           string        `json:"tmdb_type,omitempty"`
 }
 
 // IsEnabled reports whether a feed participates in scheduled/all-feed runs.
@@ -428,6 +430,7 @@ func Resolve(cli CLIParams, toml *TOMLConfig, tomlPath string, legacy *LegacyCon
 		if toml.Offline.OnePerEpisode != nil {
 			cfg.Offline.OnePerEpisode = *toml.Offline.OnePerEpisode
 		}
+		cfg.Offline.PreferHigherVersion = toml.Offline.PreferHigherVersion
 		cfg.Offline.KeepOnlyVideo = toml.Offline.KeepOnlyVideo
 		language, subtitle, container, resolution := DefaultAutoPriority()
 		cfg.Offline.AutoLanguage = normalizePriority(toml.Offline.AutoLanguage, language, map[string]bool{"chs": true, "cht": true, "bilingual": true})

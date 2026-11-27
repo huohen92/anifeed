@@ -1,5 +1,5 @@
 appname=anifeed-native
-version=0.3.8
+version=0.3.9
 display_name=AniFeed
 desc=自托管动漫 RSS 自动离线到 115 网盘。原生版，不需要 Docker。
 source=thirdparty
@@ -13,4 +13,4 @@ desktop_applaunchname=anifeed-native.main
 service_port=8115
 checkport=true
 ctl_stop=true
-changelog=0.03.8：修复加密 Cookies 读取，恢复 115 登录。
+changelog=0.03.9：新增同集优先选择更高 v 数版本。

@@ -35,16 +35,17 @@ type renamePreviewItem struct {
 }
 
 type renamePreviewResponse struct {
-	Feed           string              `json:"feed"`
-	Template       string              `json:"template"`
-	Enabled        bool                `json:"enabled"`
-	Total          int                 `json:"total"`
-	Matched        int                 `json:"matched"`
-	SelectedCount  int                 `json:"selected_count"`
-	SuggestedCount int                 `json:"suggested_count"`
-	OnePerEpisode  bool                `json:"one_per_episode"`
-	Items          []renamePreviewItem `json:"items"`
-	Missing        []int               `json:"missing,omitempty"`
+	Feed                string              `json:"feed"`
+	Template            string              `json:"template"`
+	Enabled             bool                `json:"enabled"`
+	Total               int                 `json:"total"`
+	Matched             int                 `json:"matched"`
+	SelectedCount       int                 `json:"selected_count"`
+	SuggestedCount      int                 `json:"suggested_count"`
+	OnePerEpisode       bool                `json:"one_per_episode"`
+	PreferHigherVersion bool                `json:"prefer_higher_version"`
+	Items               []renamePreviewItem `json:"items"`
+	Missing             []int               `json:"missing,omitempty"`
 }
 
 func (s *Server) handleRenamePreview(w http.ResponseWriter, r *http.Request) {
@@ -174,15 +175,16 @@ func (s *Server) handleRenamePreview(w http.ResponseWriter, r *http.Request) {
 		Subgroup: sourceSubgroup,
 	}
 	suggested := p115.SelectEpisodes(items, true)
-	actual := p115.SelectEpisodes(items, cfg.Offline.OnePerEpisode)
+	actual := p115.SelectEpisodes(items, cfg.Offline.OnePerEpisode, cfg.Offline.PreferHigherVersion)
 	resp := renamePreviewResponse{
-		Feed:          feed.Name,
-		Template:      cfg.Rename.Template,
-		Enabled:       cfg.Rename.Enabled,
-		Total:         total,
-		Matched:       len(items),
-		OnePerEpisode: cfg.Offline.OnePerEpisode,
-		Items:         make([]renamePreviewItem, 0, len(detailed)),
+		Feed:                feed.Name,
+		Template:            cfg.Rename.Template,
+		Enabled:             cfg.Rename.Enabled,
+		Total:               total,
+		Matched:             len(items),
+		OnePerEpisode:       cfg.Offline.OnePerEpisode,
+		PreferHigherVersion: cfg.Offline.PreferHigherVersion,
+		Items:               make([]renamePreviewItem, 0, len(detailed)),
 	}
 	for detailedIndex, entry := range detailed {
 		item := entry.Item

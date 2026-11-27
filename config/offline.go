@@ -27,14 +27,15 @@ type OfflineConfig struct {
 	AutoDisableCompleted bool
 	// DualFolder enables moving a completed task from the offline folder to
 	// FinalCid after renaming.
-	DualFolder        bool
-	FinalCid          string
-	FinalMode         int
-	FinalCid2         string
-	FinalPathTemplate string
-	OnePerEpisode     bool
-	KeepOnlyVideo     bool
-	AutoRules         bool
+	DualFolder          bool
+	FinalCid            string
+	FinalMode           int
+	FinalCid2           string
+	FinalPathTemplate   string
+	OnePerEpisode       bool
+	PreferHigherVersion bool
+	KeepOnlyVideo       bool
+	AutoRules           bool
 
 	// AutoPriority orders the options used by "apply best rules".
 	AutoLanguage         []string
@@ -236,6 +237,7 @@ func DefaultOfflineConfig() OfflineConfig {
 		GlobalExclude:        DefaultGlobalExclude(),
 		Retry:                0,
 		OnePerEpisode:        false,
+		PreferHigherVersion:  false,
 		AutoLanguage:         language,
 		AutoSubtitle:         subtitle,
 		AutoContainer:        container,

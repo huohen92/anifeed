@@ -130,6 +130,7 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 	}
 	writeKV(&b, "final_path_template", quote(finalPath))
 	writeKV(&b, "one_per_episode", strconv.FormatBool(boolOrDefault(cfg.Offline.OnePerEpisode, false)))
+	writeKV(&b, "prefer_higher_version", strconv.FormatBool(cfg.Offline.PreferHigherVersion))
 	writeKV(&b, "keep_only_video", strconv.FormatBool(cfg.Offline.KeepOnlyVideo))
 	language, subtitle, container, resolution := DefaultAutoPriority()
 	writeKV(&b, "auto_language", stringArray(orDefault(cfg.Offline.AutoLanguage, language)))
@@ -380,6 +381,12 @@ func MarshalTOML(cfg *TOMLConfig) ([]byte, error) {
 		}
 		if rss.AutoBackup != nil && !*rss.AutoBackup {
 			writeKV(&b, "auto_backup", "false")
+		}
+		if rss.AutoBackupIdle != nil {
+			writeKV(&b, "auto_backup_idle", strconv.FormatBool(*rss.AutoBackupIdle))
+		}
+		if rss.AutoBackupFailures != nil {
+			writeKV(&b, "auto_backup_failures", strconv.FormatBool(*rss.AutoBackupFailures))
 		}
 		if rss.TmdbID != "" {
 			writeKV(&b, "tmdb_id", quote(rss.TmdbID))

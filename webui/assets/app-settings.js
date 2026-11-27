@@ -785,6 +785,7 @@ function renderSettingsPage() {
             <label class="field span-2"><span>离线后转移到保存文件夹</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-dual-folder" ${(cfg.offline || {}).dual_folder ? 'checked' : ''}><span></span></span><span>离线完成后（如启用重命名则先重命名）移动到默认保存文件夹</span></span></label>
             <label class="field span-2"><span>保存文件夹只保留视频和字幕</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-keep-only-video" ${(cfg.offline || {}).keep_only_video ? 'checked' : ''}><span></span></span><span>离线后转移到保存文件夹下，只把视频和字幕移动到保存文件夹；字体/其他文件留在离线目录，字幕自动追加 .sc/.tc 等语言后缀</span></span></label>
             <label class="field span-2"><span>同一 RSS 内每集只选一个版本</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-one-per-episode" ${(cfg.offline || {}).one_per_episode ? 'checked' : ''}><span></span></span><span>关闭时同一 RSS 内所有版本都会提交；开启后只提交评分最高的一个，不影响主 RSS 与备用 RSS 之间各自保留版本</span></span></label>
+            <label class="field span-2"><span>优先选择 v 数更大的版本</span><span class="check" style="height:36px"><span class="switch"><input type="checkbox" id="set-prefer-higher-version" ${(cfg.offline || {}).prefer_higher_version ? 'checked' : ''}><span></span></span><span>开启后同集 01v2 会优先于 01，即使 01 的画质或字幕评分更高；仅在「每集只选一个版本」开启时生效</span></span></label>
           </div>
         </div>
       </section>
@@ -1568,6 +1569,7 @@ function collectSettings() {
     auto_clear_completed: $('#set-auto-clear').checked,
     auto_disable_completed: $('#set-auto-disable-completed').checked,
     one_per_episode: $('#set-one-per-episode').checked,
+    prefer_higher_version: $('#set-prefer-higher-version').checked,
     keep_only_video: $('#set-keep-only-video').checked,
     auto_language: state.autoPriority ? state.autoPriority.language : PRIORITY_DEFAULTS.language,
     auto_subtitle: state.autoPriority ? state.autoPriority.subtitle : PRIORITY_DEFAULTS.subtitle,
