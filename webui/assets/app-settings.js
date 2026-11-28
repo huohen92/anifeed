@@ -904,7 +904,7 @@ function renderSettingsPage() {
       <section class="card">
         <div class="section-title"><span class="ico">${icon('info')}</span><div><h3>关于</h3><p>AniFeed 项目信息</p></div></div>
         <div class="section-body">
-          <div class="about-head"><span class="brand-mark"><img src="/logo.png" alt="AniFeed"></span><div><h2>AniFeed</h2><p>RSS → 115 离线 · 自托管动漫下载管理</p></div></div>
+          <div class="about-head"><span class="brand-mark"><img src="/logo.webp" alt="AniFeed"></span><div><h2>AniFeed</h2><p>RSS → 115 离线 · 自托管动漫下载管理</p></div></div>
           <div class="kv">
             <div class="kv-row"><span>版本</span><code>v${esc(state.status ? state.status.version : '0.02')}</code></div>
             <div class="kv-row"><span>GitHub</span><a href="https://github.com/huohen92/anifeed" target="_blank" rel="noopener noreferrer">github.com/huohen92/anifeed</a></div>

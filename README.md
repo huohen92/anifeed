@@ -172,13 +172,13 @@ docker compose up -d --build
 原生包不需要 Docker，直接运行静态二进制：
 
 ```text
-https://github.com/huohen92/anifeed/releases/download/v0.03.21/AniFeed-0.3.21-x86-native.fpk
+https://github.com/huohen92/anifeed/releases/download/v0.03.22/AniFeed-0.3.22-x86-native.fpk
 ```
 
 安装：
 
 ```text
-fnOS 应用中心 → 手动安装 → 选择 AniFeed-0.3.21-x86-native.fpk
+fnOS 应用中心 → 手动安装 → 选择 AniFeed-0.3.22-x86-native.fpk
 ```
 
 说明：
@@ -200,7 +200,7 @@ SHA256：
 ```bash
 # 需要 fnpack 和 musl-gcc
 ./scripts/build-fpk-native.sh
-# 输出：dist/AniFeed-0.3.21-x86-native.fpk
+# 输出：dist/AniFeed-0.3.22-x86-native.fpk
 ```
 
 FPK 源文件位于 [`fpk-native/`](./fpk-native)。
@@ -208,7 +208,7 @@ FPK 源文件位于 [`fpk-native/`](./fpk-native)。
 #### Docker 版（备选）
 
 ```text
-https://github.com/huohen92/anifeed/releases/download/v0.03.21/anifeed-0.3.21-x86.fpk
+https://github.com/huohen92/anifeed/releases/download/v0.03.22/anifeed-0.3.22-x86.fpk
 ```
 
 适合希望使用容器隔离，或已经在 fnOS 上启用 Docker 的用户。

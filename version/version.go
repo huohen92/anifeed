@@ -3,4 +3,4 @@ package version
 
 // Version is set at build time when -ldflags "-X .../version.Version=..." is
 // used; the default identifies the Web UI fork.
-var Version = "0.03.21"
+var Version = "0.03.22"

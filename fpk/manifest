@@ -1,5 +1,5 @@
 appname=anifeed
-version=0.3.21
+version=0.3.22
 display_name=AniFeed
 desc=自托管动漫 RSS 自动离线到 115 网盘。安装后打开应用，先创建 Web UI 登录账号，再填写 115 Cookies。
 source=thirdparty
@@ -13,4 +13,4 @@ desktop_applaunchname=anifeed.main
 service_port=8115
 checkport=true
 ctl_stop=true
-changelog=0.03.21：恢复今日最初的原版 Logo 与应用图标。
+changelog=0.03.22：修复系统与关于页 Logo 使用低清 favicon 导致的模糊。
