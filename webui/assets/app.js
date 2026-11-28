@@ -997,7 +997,7 @@ function dashboardAnimeCard(feed, index) {
   const disabled = !enabled || completed;
   return `<article class="anime-card ${disabled ? 'disabled' : ''}" data-dashboard-feed="${index}">
     <div class="anime-poster ${cached && cached.cover && state.decodedCovers[cached.cover] ? 'has-image' : ''}" data-feed-cover data-index="${index}">
-      <span class="poster-fallback"><img src="/logo.svg" alt="AniFeed"></span>
+      <span class="poster-fallback"><img src="/logo.webp" alt="AniFeed"></span>
       <img class="poster-image" alt="${esc(cached ? cached.title || '' : '')}" ${cached && cached.cover ? `src="${esc(cached.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
       <span class="anime-badge">${completed ? '已完成' : disabled ? '未启用' : '追番中'}</span>
     </div>
@@ -1461,7 +1461,7 @@ function feedCard(feed, index, completed = false) {
   const quarter = quarterOf(feed) || '—';
   return `<article class="anime-card feed-manage-card ${disabled ? 'disabled' : ''}" title="${esc(feed.name)}">
     <div class="anime-poster ${cachedCover && cachedCover.cover && state.decodedCovers[cachedCover.cover] ? 'has-image' : ''}" data-feed-cover data-feed-poster data-index="${index}" data-source="${source.key}" title="点击编辑订阅">
-      <span class="poster-fallback"><img src="/logo.svg" alt="AniFeed"></span>
+      <span class="poster-fallback"><img src="/logo.webp" alt="AniFeed"></span>
       <img class="poster-image" alt="${esc(cachedCover ? cachedCover.title || '' : '')}" ${cachedCover && cachedCover.cover ? `src="${esc(cachedCover.cover)}"` : ''} loading="lazy" referrerpolicy="no-referrer">
       <span class="anime-badge">${completed ? '已完成' : disabled ? '未启用' : '追番中'}</span>
       <div class="feed-cover-overlay">

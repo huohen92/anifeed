@@ -587,7 +587,7 @@ func staticHandler() http.Handler {
 			_, _ = w.Write(data)
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/backgrounds/") || r.URL.Path == "/logo.svg" || r.URL.Path == "/logo.webp" || r.URL.Path == "/logo.png" {
+		if strings.HasPrefix(r.URL.Path, "/backgrounds/") || r.URL.Path == "/logo.webp" || r.URL.Path == "/logo.png" {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
 		if strings.HasSuffix(r.URL.Path, "/") {
