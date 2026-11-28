@@ -5,7 +5,7 @@ services:
       args:
         # 国内网络可改为 https://goproxy.cn,direct
         GOPROXY: https://proxy.golang.org,direct
-    image: huohen92/anifeed:0.03.1
+    image: huohen92/anifeed:0.3.9
     container_name: anifeed
     restart: unless-stopped
     ports:

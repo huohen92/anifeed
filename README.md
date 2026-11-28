@@ -69,7 +69,7 @@ go build -o anifeed .
 镜像：
 
 ```text
-huohen92/anifeed:0.03.1
+huohen92/anifeed:0.3.9
 huohen92/anifeed:latest
 ```
 
@@ -84,7 +84,7 @@ https://hub.docker.com/r/huohen92/anifeed
 #### 直接拉取运行
 
 ```bash
-docker pull huohen92/anifeed:0.03.1
+docker pull huohen92/anifeed:0.3.9
 
 mkdir -p data
 
@@ -94,7 +94,7 @@ docker run -d \
   -p 80:80 \
   -v "$PWD/data:/data" \
   -e TZ=Asia/Shanghai \
-  huohen92/anifeed:0.03.1
+  huohen92/anifeed:0.3.9
 ```
 
 打开：
@@ -134,7 +134,7 @@ data/db.sqlite
 ```yaml
 services:
   anifeed:
-    image: huohen92/anifeed:0.03.1
+    image: huohen92/anifeed:0.3.9
     container_name: anifeed
     restart: unless-stopped
     ports:
@@ -214,7 +214,7 @@ https://github.com/huohen92/anifeed/releases/download/v0.3.9/anifeed-0.3.9-x86.f
 适合希望使用容器隔离，或已经在 fnOS 上启用 Docker 的用户。
 
 - 需要 fnOS 已安装 Docker
-- 容器镜像：`huohen92/anifeed:0.03.1`
+- 容器镜像：`huohen92/anifeed:0.3.9`
 - 应用端口：`80`
 
 FPK 源文件位于 [`fpk/`](./fpk)。
