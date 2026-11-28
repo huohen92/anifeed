@@ -6,16 +6,17 @@
   <meta name="color-scheme" content="light dark">
   <title>AniFeed</title>
   <meta name="description" content="AniFeed Web 控制台：管理 RSS 订阅、运行离线任务、查看 115 任务与历史记录。">
+  <link rel="icon" type="image/svg+xml" href="/logo.svg">
   <link rel="icon" type="image/png" href="/logo.png">
-  <link rel="stylesheet" href="/styles.min.css?v=0.03.19.1">
-  <link rel="stylesheet" href="/personalization.min.css?v=0.03.19.1">
-  <link rel="stylesheet" href="/settings-layout.min.css?v=0.03.19.1">
+  <link rel="stylesheet" href="/styles.min.css?v=0.03.20.1">
+  <link rel="stylesheet" href="/personalization.min.css?v=0.03.20.1">
+  <link rel="stylesheet" href="/settings-layout.min.css?v=0.03.20.1">
 </head>
 <body data-route="dashboard">
   <div class="app" id="app">
     <aside class="sidebar" id="sidebar">
       <a class="brand" href="#/dashboard" aria-label="AniFeed">
-        <span class="brand-mark"><img src="/logo.webp" alt="AniFeed logo"></span>
+        <span class="brand-mark"><img src="/logo.svg" alt="AniFeed logo"></span>
         <span class="brand-text">
           <strong>AniFeed</strong>
           <small>RSS → 115 离线</small>
@@ -79,7 +80,7 @@
 
   <div class="token-gate hidden" id="token-gate">
     <form class="token-card" id="token-form">
-      <div class="token-logo"><img src="/logo.webp" alt="AniFeed"><strong>AniFeed</strong></div>
+      <div class="token-logo"><img src="/logo.svg" alt="AniFeed"><strong>AniFeed</strong></div>
       <h2>需要访问令牌</h2>
       <p>该 AniFeed 实例在 config.toml 中设置了 <code>server.access_token</code>，请输入令牌后继续。</p>
       <label class="field">
@@ -94,7 +95,7 @@
   <div class="auth-gate hidden" id="auth-gate">
     <p class="form-error hidden" id="auth-error"></p>
     <form class="auth-card" id="auth-form">
-      <div class="auth-logo"><img src="/logo.webp" alt="AniFeed"><strong>AniFeed</strong><small>RSS → 115 离线</small></div>
+      <div class="auth-logo"><img src="/logo.svg" alt="AniFeed"><strong>AniFeed</strong><small>RSS → 115 离线</small></div>
       <h2 id="auth-title" class="hidden"></h2>
       <p id="auth-desc" class="hidden"></p>
       <label class="field"><span>账号</span><input class="input" id="auth-user" autocomplete="username" required></label>
@@ -114,7 +115,7 @@
   </nav>
   <a class="ai-fab" id="ai-fab-mobile" href="#/ai" aria-label="AI 助手" title="AI 助手"><span>AI</span></a>
 
-  <script src="/theme.min.js?v=0.03.19.1"></script>
-  <script src="/app.min.js?v=0.03.19.1"></script>
+  <script src="/theme.min.js?v=0.03.20.1"></script>
+  <script src="/app.min.js?v=0.03.20.1"></script>
 </body>
 </html>

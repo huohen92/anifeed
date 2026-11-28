@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="AniFeed">
+  <defs>
+    <linearGradient id="chicken" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffd45c"/>
+      <stop offset=".52" stop-color="#f4ae31"/>
+      <stop offset="1" stop-color="#d77a17"/>
+    </linearGradient>
+    <linearGradient id="chickenLight" x1="0" y1="0" x2=".7" y2="1">
+      <stop offset="0" stop-color="#ffe99a"/>
+      <stop offset="1" stop-color="#f7c043"/>
+    </linearGradient>
+    <linearGradient id="bucketShade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".55"/>
+      <stop offset=".25" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#250d08" stop-opacity=".24"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffdf7"/>
+      <stop offset="1" stop-color="#f4e8d4"/>
+    </linearGradient>
+    <pattern id="stripes" width="66" height="66" patternUnits="userSpaceOnUse" patternTransform="rotate(34)">
+      <rect width="66" height="66" fill="#fff8ea"/>
+      <rect width="33" height="66" fill="#e33a34"/>
+    </pattern>
+    <clipPath id="bucketClip">
+      <path d="M116 232 C119 219 133 213 151 213 L361 213 C379 213 393 219 396 232 L368 449 C366 462 350 469 330 469 L182 469 C162 469 146 462 144 449 Z"/>
+    </clipPath>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#3b120d" flood-opacity=".24"/>
+    </filter>
+    <filter id="badgeShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#3b120d" flood-opacity=".28"/>
+    </filter>
+  </defs>
+
+  <!-- ground shadow -->
+  <ellipse cx="256" cy="474" rx="142" ry="18" fill="#2b0b08" opacity=".16"/>
+
+  <g filter="url(#soft)">
+    <!-- bones -->
+    <g fill="#fff4d6" stroke="#5c2d18" stroke-width="8" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M84 153 C72 143 70 119 85 111 C97 104 113 109 119 122 C126 111 142 111 152 121 C164 134 157 152 143 157 L122 161 C108 164 94 163 84 153 Z"/>
+      <path d="M428 146 C442 136 446 112 431 104 C419 97 403 102 397 115 C390 104 374 103 364 113 C352 126 359 144 373 149 L394 154 C408 158 418 156 428 146 Z"/>
+    </g>
+
+    <!-- chicken pile -->
+    <path d="M110 236 C93 214 95 185 113 173 C102 147 116 120 143 116 C147 88 174 71 199 79 C209 52 245 42 269 58 C286 36 322 39 335 66 C364 54 395 74 396 103 C426 110 440 137 429 161 C452 174 452 210 429 228 C419 236 400 239 382 236 L138 236 C126 236 117 236 110 236 Z" fill="url(#chicken)" stroke="#5c2d18" stroke-width="9" stroke-linejoin="round"/>
+
+    <!-- crispy pieces -->
+    <path d="M136 195 C124 181 129 158 145 151 C151 132 174 127 187 141 C199 130 220 136 222 154 C239 157 247 175 237 190 C226 204 204 204 189 196 C171 206 148 207 136 195 Z" fill="url(#chickenLight)" stroke="#6a3218" stroke-width="6"/>
+    <path d="M233 183 C227 164 242 145 262 146 C270 128 295 125 308 140 C328 134 345 149 341 168 C356 181 348 202 329 204 C321 220 298 222 285 208 C268 217 244 210 240 194 Z" fill="url(#chickenLight)" stroke="#6a3218" stroke-width="6"/>
+    <path d="M304 207 C302 191 316 177 333 181 C342 168 362 171 367 185 C382 189 387 207 376 219 C363 232 340 229 328 217 C319 223 307 219 304 207 Z" fill="#e99a22" stroke="#6a3218" stroke-width="5"/>
+
+    <!-- crunchy highlights -->
+    <g fill="#ffe89a" opacity=".9">
+      <ellipse cx="166" cy="166" rx="17" ry="12" transform="rotate(-24 166 166)"/>
+      <ellipse cx="260" cy="151" rx="21" ry="13" transform="rotate(-15 260 151)"/>
+      <ellipse cx="338" cy="183" rx="13" ry="9" transform="rotate(18 338 183)"/>
+      <circle cx="212" cy="185" r="7"/>
+      <circle cx="292" cy="193" r="6"/>
+    </g>
+    <g fill="#c46a12" opacity=".55">
+      <circle cx="150" cy="185" r="5"/>
+      <circle cx="236" cy="172" r="5"/>
+      <circle cx="314" cy="164" r="4"/>
+      <circle cx="358" cy="204" r="4"/>
+    </g>
+
+    <!-- bucket -->
+    <path d="M116 232 C119 219 133 213 151 213 L361 213 C379 213 393 219 396 232 L368 449 C366 462 350 469 330 469 L182 469 C162 469 146 462 144 449 Z" fill="url(#stripes)" stroke="#5c2d18" stroke-width="9" stroke-linejoin="round"/>
+    <g clip-path="url(#bucketClip)">
+      <path d="M116 232 C119 219 133 213 151 213 L361 213 C379 213 393 219 396 232 L368 449 C366 462 350 469 330 469 L182 469 C162 469 146 462 144 449 Z" fill="url(#bucketShade)"/>
+      <path d="M104 213 L408 213 L408 235 L104 235 Z" fill="#5c2d18" opacity=".15"/>
+    </g>
+
+    <!-- rim -->
+    <path d="M108 217 C108 202 124 194 144 194 L368 194 C388 194 404 202 404 217 C404 232 388 240 368 240 L144 240 C124 240 108 232 108 217 Z" fill="url(#rim)" stroke="#5c2d18" stroke-width="9"/>
+    <path d="M126 216 C126 208 136 204 149 204 L363 204 C376 204 386 208 386 216" fill="none" stroke="#e33a34" stroke-width="5" stroke-linecap="round" opacity=".75"/>
+
+    <!-- front chicken piece overlapping the rim -->
+    <path d="M225 230 C216 213 229 195 247 197 C255 181 278 180 288 194 C306 192 317 209 307 224 C298 238 276 238 264 228 C249 238 231 241 225 230 Z" fill="url(#chickenLight)" stroke="#5c2d18" stroke-width="6"/>
+
+    <!-- RSS badge -->
+    <g filter="url(#badgeShadow)">
+      <circle cx="256" cy="348" r="52" fill="#fffaf0" stroke="#5c2d18" stroke-width="7"/>
+      <circle cx="238" cy="373" r="8" fill="#e33a34"/>
+      <path d="M230 348 C252 348 268 363 268 385" fill="none" stroke="#e33a34" stroke-width="11" stroke-linecap="round"/>
+      <path d="M230 332 C268 332 288 352 288 380" fill="none" stroke="#e33a34" stroke-width="11" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>
